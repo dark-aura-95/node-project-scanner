@@ -1,0 +1,44 @@
+{
+  "name": "node-project-scanner",
+  "version": "1.1.0",
+  "description": "Professional CLI to scan, run, and build Node/JS projects with port control",
+  "type": "module",
+  "bin": {
+    "nps": "./bin/nps.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node bin/nps.mjs",
+    "test": "node test/smoke.mjs",
+    "prepublishOnly": "node bin/nps.mjs --version"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "neo-blessed": "^0.2.0"
+  },
+  "keywords": [
+    "cli",
+    "scanner",
+    "monorepo",
+    "dev-server",
+    "port",
+    "vite",
+    "nextjs",
+    "nps"
+  ],
+  "license": "MIT",
+  "author": "",
+  "repository": {
+    "type": "git",
+    "url": ""
+  }
+}
