@@ -31,34 +31,112 @@ export function detectPort(dir, scripts = {}) {
 }
 
 export function isPortFree(port) {
+  const hosts = ['0.0.0.0', '127.0.0.1', '::1', '::'];
+
   return new Promise((resolve) => {
-    const srv = net.createServer();
-    srv.once('error', () => resolve(false));
-    srv.once('listening', () => srv.close(() => resolve(true)));
-    srv.listen(port, '127.0.0.1');
+    let index = 0;
+
+    const tryNext = () => {
+      if (index >= hosts.length) return resolve(true);
+
+      const host = hosts[index++];
+      const srv = net.createServer();
+      srv.once('error', (err) => {
+        if (err.code === 'EADDRINUSE') return resolve(false);
+        if (host === '::1' || host === '::') return tryNext();
+        return resolve(false);
+      });
+      srv.once('listening', () => srv.close(tryNext));
+      srv.listen(port, host);
+    };
+
+    tryNext();
   });
 }
 
 export function validatePort(port) {
-  const n = typeof port === 'number' ? port : parseInt(port, 10);
+  if (typeof port === 'number') {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+    return port;
+  }
+
+  const raw = String(port).trim();
+  if (!/^\d+$/.test(raw)) return null;
+
+  const n = parseInt(raw, 10);
   if (!Number.isFinite(n) || n < 1 || n > 65535) return null;
   return n;
 }
 
 function parseWindowsNetstat(stdout, port) {
   const pids = new Set();
-  const suffix = `:${port}`;
 
   for (const line of stdout.split(/\r?\n/)) {
-    if (!/\sLISTENING\s/.test(line)) continue;
     const parts = line.trim().split(/\s+/);
-    if (parts.length < 5) continue;
-    if (!parts[1].endsWith(suffix)) continue;
+    if (parts.length < 5 || parts[0] !== 'TCP') continue;
+
+    const state = parts[3]?.toUpperCase() ?? '';
+    if (state.includes('WAIT')) continue;
+
+    const localPort = parsePortFromAddress(parts[1]);
+    if (localPort !== port) continue;
+
     const pid = parseInt(parts[parts.length - 1], 10);
     if (Number.isFinite(pid) && pid > 0) pids.add(pid);
   }
 
   return [...pids];
+}
+
+function parsePortFromAddress(address = '') {
+  if (!address) return null;
+
+  if (address.startsWith('[')) {
+    const end = address.indexOf(']');
+    if (end === -1) return null;
+    const port = parseInt(address.slice(end + 2), 10);
+    return Number.isFinite(port) ? port : null;
+  }
+
+  const colon = address.lastIndexOf(':');
+  if (colon === -1) return null;
+  const port = parseInt(address.slice(colon + 1), 10);
+  return Number.isFinite(port) ? port : null;
+}
+
+async function findPidsOnPortWindows(port) {
+  try {
+    const { stdout } = await execFileAsync(
+      'powershell',
+      [
+        '-NoProfile',
+        '-Command',
+        `[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); ` +
+          `(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | ` +
+          `Select-Object -ExpandProperty OwningProcess -Unique) -join ' '`,
+      ],
+      { encoding: 'utf8', windowsHide: true }
+    );
+    const pids = stdout
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((s) => parseInt(s, 10))
+      .filter((n) => n > 0);
+    if (pids.length) return [...new Set(pids)];
+  } catch {
+    // fall back to netstat
+  }
+
+  try {
+    const { stdout } = await execFileAsync('netstat', ['-ano'], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    return parseWindowsNetstat(stdout, port);
+  } catch {
+    return [];
+  }
 }
 
 async function findPidsOnPortUnix(port) {
@@ -90,15 +168,7 @@ export async function findPidsOnPort(port) {
   if (valid == null) return [];
 
   if (process.platform === 'win32') {
-    try {
-      const { stdout } = await execFileAsync('netstat', ['-ano'], {
-        encoding: 'utf8',
-        windowsHide: true,
-      });
-      return parseWindowsNetstat(stdout, valid);
-    } catch {
-      return [];
-    }
+    return findPidsOnPortWindows(valid);
   }
 
   return findPidsOnPortUnix(valid);
@@ -108,19 +178,18 @@ export async function killPort(port, { force = true } = {}) {
   const valid = validatePort(port);
   if (valid == null) throw new Error(`Invalid port: ${port}`);
 
-  const wasFree = await isPortFree(valid);
-  if (wasFree) {
+  const pids = await findPidsOnPort(valid);
+  if (!pids.length && (await isPortFree(valid))) {
     return { port: valid, wasFree: true, killed: [], nowFree: true };
   }
 
-  const pids = await findPidsOnPort(valid);
   const killed = [];
 
   for (const pid of pids) {
     if (pid === process.pid) continue;
     try {
       if (process.platform === 'win32') {
-        await execFileAsync('taskkill', ['/PID', String(pid), '/F'], { windowsHide: true });
+        await execFileAsync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
       } else {
         try {
           process.kill(pid, force ? 'SIGKILL' : 'SIGTERM');
@@ -151,6 +220,15 @@ export async function findFreePort(start, maxTries = 50) {
   return start;
 }
 
+export async function getPortStatus(port) {
+  const valid = validatePort(port);
+  if (valid == null) return { valid: false, port: null, isFree: false, freePort: null };
+
+  const isFree = await isPortFree(valid);
+  const freePort = isFree ? valid : await findFreePort(valid);
+  return { valid: true, port: valid, isFree, freePort };
+}
+
 export async function resolvePort(requestedPort, detectedPort) {
   const base = requestedPort ?? detectedPort;
   const freePort = await findFreePort(base);
@@ -163,31 +241,55 @@ export async function resolvePort(requestedPort, detectedPort) {
   return port;
 }
 
-export function askPort(currentPort, freePort) {
-  return new Promise((resolve) => {
-    if (process.stdin.isTTY) process.stdin.setRawMode(false);
-    cursor.show();
+export async function restoreStdinForPrompt() {
+  if (!process.stdin.isTTY) return;
 
+  process.stdin.setRawMode(false);
+  process.stdin.removeAllListeners('keypress');
+  if (process.stdin.isPaused()) process.stdin.resume();
+
+  process.stdin.setEncoding('utf8');
+  let chunk;
+  while ((chunk = process.stdin.read()) !== null) {
+    // discard buffered keystrokes left from the TUI
+  }
+
+  cursor.show();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+}
+
+function readPortAnswer(currentPort, freePort, invalidMsg = '') {
+  return new Promise((resolve) => {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
       terminal: true,
     });
 
-    rl.question(
+    const prompt =
       `\n  ${B}${fg.bcyan}⚙ Port Setup${R}\n` +
       `  ${DIM}Detected:${R} ${currentPort}  ${DIM}Status:${R} ${msgPortStatus(currentPort, freePort)}\n` +
-      `  ${DIM}Press Enter for auto (${freePort}), or type a port:${R} `,
-      (answer) => {
-        rl.close();
-        const trimmed = answer.trim();
-        if (!trimmed) {
-          resolve(freePort);
-          return;
-        }
-        const num = parseInt(trimmed, 10);
-        resolve((num >= 1 && num <= 65535) ? num : freePort);
-      }
-    );
+      (invalidMsg ? `  ${fg.yellow}${invalidMsg}${R}\n` : '') +
+      `  ${DIM}Press Enter for auto (${freePort}), or type a port:${R} `;
+
+    rl.question(prompt, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
   });
+}
+
+export async function askPort(currentPort, freePort) {
+  await restoreStdinForPrompt();
+
+  let invalidMsg = '';
+  while (true) {
+    const trimmed = await readPortAnswer(currentPort, freePort, invalidMsg);
+    if (!trimmed) return freePort;
+
+    const port = validatePort(trimmed);
+    if (port != null) return port;
+
+    invalidMsg = `Invalid port "${trimmed}" (use 1–65535)`;
+  }
 }

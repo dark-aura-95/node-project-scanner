@@ -1,4 +1,4 @@
-import { enrichProjectGit, enrichProjectOutdated, enrichProjectMeta } from '../enrich.mjs';
+import { enrichProjectMeta } from '../enrich.mjs';
 import { refineProject } from '../scanner.mjs';
 import { detectPort } from '../port.mjs';
 import { detectPkgManagerAndLock } from '../detect.mjs';
@@ -54,47 +54,15 @@ export function loadProjectFsMeta(proj) {
   return proj;
 }
 
-export function loadProjectGit(proj) {
-  if (proj._gitLoaded) return proj;
-
-  proj.git = enrichProjectGit(proj).git;
-  proj._gitLoaded = true;
-  return proj;
-}
-
-export function loadProjectOutdated(proj, { force = false } = {}) {
-  if (proj._outdatedLoaded && !force) return proj;
-
-  proj.stats = enrichProjectOutdated(proj).stats;
-  proj._outdatedLoaded = true;
-  return proj;
-}
-
 export function applyProjectMetaFast(proj) {
   Object.assign(proj, enrichProjectMeta(proj));
   return proj;
 }
 
-export function loadProjectDetails(proj, { isCancelled, onFs, onGit, onOutdated, onDone } = {}) {
-  scheduleIdle(() => {
-    if (isCancelled?.()) return;
+export function loadProjectDetails(proj, { isCancelled, onFs, onDone } = {}) {
+  if (isCancelled?.()) return;
 
-    loadProjectFsMeta(proj);
-    onFs?.(proj);
-
-    scheduleIdle(() => {
-      if (isCancelled?.()) return;
-
-      loadProjectGit(proj);
-      onGit?.(proj);
-
-      scheduleIdle(() => {
-        if (isCancelled?.()) return;
-
-        loadProjectOutdated(proj);
-        onOutdated?.(proj);
-        onDone?.(proj);
-      });
-    });
-  });
+  loadProjectFsMeta(proj);
+  onFs?.(proj);
+  onDone?.(proj);
 }

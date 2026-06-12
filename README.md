@@ -8,26 +8,29 @@ Short command: **`nps`**
 
 ```
 src/
-├── constants.mjs   # App name, version, tagline, shortcuts
-├── messages.mjs    # Shared user-facing messages
-├── project.mjs     # Script helpers (dev/start/build)
+├── constants.mjs        # App name, version, tagline, shortcuts
+├── messages.mjs         # Shared user-facing messages
+├── project.mjs          # Script helpers (dev/start/build)
+├── port.mjs             # Port detect, validate, kill, status
 ├── ui/
-│   ├── format.mjs  # All ANSI & blessed formatting
-│   ├── menu.mjs    # Arrow-key menu
-│   ├── blessed.mjs # TUI
-│   └── ansi.mjs    # Fallback menus
+│   ├── blessed.mjs      # TUI controller
+│   ├── blessed-layout.mjs
+│   ├── blessed-modals.mjs   # Port confirm, prompts, action menu
+│   ├── dashboard-format.mjs # Detail panel formatting
+│   ├── format.mjs           # ANSI & blessed formatting
+│   └── router.mjs           # TTY vs non-TTY entry
 ```
 
 ## Features
 
-- **Dashboard TUI** — projects list, summary, git/commits, package & outdated panels
+- **Dashboard TUI** — projects list, summary, and detail panels (basic info, package status, scripts, system)
 - **Fast incremental scan** — projects stream in while directories are walked
-- **Lazy enrichment** — git, outdated, and deps status load per project (not all at once)
+- **Lazy enrichment** — filesystem meta, install status, and package stats load per project
 - Recursive `package.json` discovery across monorepos
 - Auto-detect builders: Next.js, Vite, Nuxt, SvelteKit, Astro, Remix, Gatsby, Angular, and more
 - Detect package manager: npm, pnpm, yarn, bun
 - Port detection from `.env` files and scripts
-- Port override with free-port fallback
+- Port confirm dialog before launch with kill-port support
 - Configurable Node heap memory (`M` / `nps memory`)
 - Hybrid UI: blessed split-panel TUI with ANSI fallback
 - Scriptable subcommands for CI and automation
@@ -77,18 +80,29 @@ nps --no-tui
 | `B` | Run build |
 | `I` | Install dependencies |
 | `C` | CI install (frozen lockfile) |
-| `P` | Change port |
 | `K` | Kill process on project port |
 | `M` | Node memory (GB) |
-| `U` | Refresh outdated packages |
 | `T` | Open terminal in project folder |
 | `E` | Open folder in Explorer |
-| `G` | Show git status toast |
 | `O` | More actions (all scripts) |
 | `R` | Rescan |
 | `/` | Search / filter |
 | `?` | Help |
 | `Q` | Quit |
+
+**Port confirm dialog** (shown before launch when a script uses a port)
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Launch with the port shown in the field |
+| `K` | Kill the process using the detected port, then auto-fill that port |
+| `Esc` | Cancel |
+
+The port field auto-fills:
+
+- **Port free** → detected port (e.g. `3000`)
+- **Port in use** → next free port (e.g. `3001`)
+- **After kill** → original detected port (e.g. `3000`), then press Enter to launch
 
 ### Commands
 
@@ -137,8 +151,12 @@ nps run my-app --script test
 - Detects `PORT` from `.env`, `.env.local`, `.env.development`
 - Parses `--port` / `-p` from npm scripts
 - Sets `PORT` env var and forwards builder-specific CLI flags
-- Auto-finds next free port when the chosen port is busy
-- Kill stuck processes on a port (`nps kill-port`, `--kill-port`, or `K` in TUI)
+- Shows a confirm dialog before launch with port status and URL
+- When the detected port is busy, suggests the **next free port** in basic info and the confirm dialog
+- Auto-fills the port field: detected port when free, next free when busy, original port after kill
+- Kill stuck processes on a port (`nps kill-port`, `--kill-port`, `K` in TUI, or `K` in the port confirm dialog)
+- Basic info panel shows live port status and updates after kill (`available` / `in use` / `Use Port`)
+- Reliable on Windows — finds listeners on `0.0.0.0` and kills the full process tree
 
 ## Local development
 
@@ -163,7 +181,7 @@ npm login
 npm publish
 ```
 
-**1.1.0 highlights:** dashboard TUI, incremental scan, lazy git/outdated loading, auto deps status, scan crash fix. Full notes in [CHANGELOG.md](./CHANGELOG.md).
+**1.1.2 highlights:** Windows kill-port fix, next free port suggestions, auto-fill port in confirm dialog, status refresh after kill. Full notes in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Requirements
 

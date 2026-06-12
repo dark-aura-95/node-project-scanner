@@ -139,7 +139,7 @@ export function formatBlessedDetails(proj, customPort) {
     `{gray-fg}${DIVIDER}{/}`,
     '',
     '  {bold}I{/} Install  {bold}C{/} CI  {bold}O{/} More  {bold}D{/} Dev  {bold}B{/} Build',
-    '  {bold}Enter{/} Actions  {bold}P{/} Port preset  {bold}?{/} Help   {bold}Q{/} Quit',
+    '  {bold}Enter{/} Actions  {bold}?{/} Help   {bold}Q{/} Quit',
   ].join('\n');
 }
 
@@ -150,6 +150,7 @@ export function formatBlessedHelp() {
     '{bold}Navigation{/}',
     '  ↑ ↓        Move through projects',
     '  Enter      Open actions menu',
+    '  Double-click Open actions menu (project list)',
     '  /          Search / filter projects',
     '  Esc        Clear search filter',
     '',
@@ -162,7 +163,6 @@ export function formatBlessedHelp() {
     '  T          Run test',
     '  L          Run lint',
     '  O          More actions menu',
-    '  P          Set custom port',
     '  K          Kill process on project port',
     '  M          Set Node memory (GB)',
     '  R          Rescan directory',

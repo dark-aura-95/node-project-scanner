@@ -6,8 +6,7 @@ export function matchesProjectQuery(proj, query) {
     proj.name.toLowerCase().includes(q) ||
     (proj.folderName || '').toLowerCase().includes(q) ||
     proj.relDir.toLowerCase().includes(q) ||
-    proj.builder.toLowerCase().includes(q) ||
-    (proj.git?.branch || '').toLowerCase().includes(q)
+    proj.builder.toLowerCase().includes(q)
   );
 }
 

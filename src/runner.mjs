@@ -44,11 +44,8 @@ export async function preparePort(proj, requestedPort, interactive = false, { ki
   let port = requestedPort ?? freePort;
 
   if (interactive && requestedPort == null) {
-    const { askPort } = await import('./port.mjs');
-    process.stdin.removeAllListeners('keypress');
-    if (process.stdin.isTTY) process.stdin.setRawMode(false);
-
-    process.stdout.write(`  ${msgPortStatus(detectedPort, freePort)}\n`);
+    const { askPort, restoreStdinForPrompt } = await import('./port.mjs');
+    await restoreStdinForPrompt();
     port = await askPort(detectedPort, freePort);
   }
 
@@ -86,7 +83,7 @@ export function printLaunch(proj, script, port, memoryGb) {
   if (needsPort(script)) {
     process.stdout.write(`  ${DIM}${fg.gray}url  ${R}${fg.cyan}http://localhost:${port}${R}\n`);
   }
-  process.stdout.write(`  ${DIM}${fg.gray}mem  ${R}${fg.cyan}${mem} GB${R} ${DIM}(${memoryMb(mem)} MB heap){R}\n`);
+  process.stdout.write(`  ${DIM}${fg.gray}mem  ${R}${fg.cyan}${mem} GB${R} ${DIM}(${memoryMb(mem)} MB heap)${R}\n`);
   process.stdout.write(`  ${DIM}${fg.gray}cwd  ${R}${fg.gray}${proj.relDir}${R}\n`);
   process.stdout.write(`  ${fg.gray}${'─'.repeat(w - 4)}${R}\n\n`);
 }

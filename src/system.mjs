@@ -49,11 +49,18 @@ export function getSystemInfo() {
       : `${platform} ${os.release()}`;
 
   const memInfo = getMemoryInfo();
+  const uptimeSec = Math.floor(process.uptime());
+  const uptimeH = Math.floor(uptimeSec / 3600);
+  const uptimeM = Math.floor((uptimeSec % 3600) / 60);
+  const uptime = uptimeH > 0 ? `${uptimeH}h ${uptimeM}m` : `${uptimeM}m`;
 
   return {
     node: process.version,
     npm: getNpmVersion(),
     os: osLabel,
+    platformArch: `${os.platform()}-${os.arch()}`,
+    environment: process.env.NODE_ENV || 'development',
+    uptime,
     heapGb: memInfo.current,
     heapMb: memInfo.currentMb,
     heapDefault: memInfo.deviceDefault,

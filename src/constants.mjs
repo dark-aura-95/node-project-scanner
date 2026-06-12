@@ -22,7 +22,7 @@ export const COLS = {
 export const SHORTCUTS = {
   footerBlessed:
     '{bold}Enter{/} Actions  {bold}I{/} Install  {bold}D{/} Dev  {bold}B{/} Build  ' +
-    '{bold}O{/} More  {bold}P{/} Port  {bold}K{/} Kill  {bold}R{/} Rescan  {bold}?{/} Help',
+    '{bold}O{/} More  {bold}K{/} Kill  {bold}R{/} Rescan  {bold}?{/} Help',
   navAnsi: '↑↓ navigate   Enter select   Q quit',
   actionAnsi: '↑↓ navigate   Enter select   Esc back   Q quit',
   scriptLegend: '✓=deps  D=dev  S=start  B=build',

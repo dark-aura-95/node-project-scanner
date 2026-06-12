@@ -3,39 +3,39 @@ import { buildProjectsAsync } from '../scanner.mjs';
 import { filterProjects } from '../project-filter.mjs';
 import { createGenerationToken } from '../async.mjs';
 import {
-  scheduleIdle,
-  loadProjectFsMeta,
-  loadProjectOutdated,
   applyProjectMetaFast,
   startInstallStatusEnrichment,
   loadProjectDetails,
 } from './lazy-load.mjs';
 import { executeAction } from './launch-flow.mjs';
-import { findFreePort, isPortFree, killPort } from '../port.mjs';
+import { getPortStatus, killPort, restoreStdinForPrompt, validatePort } from '../port.mjs';
 import { getSystemInfo, warmSystemInfoCache } from '../system.mjs';
 import { getMemoryGb, getMemoryInfo, setMemoryGb, clampMemoryGb, resetMemoryGb } from '../memory.mjs';
-import { ACTION, canRunAction, actionLabel } from '../project.mjs';
+import { ACTION, canRunAction, actionLabel, needsPort } from '../project.mjs';
 import { MSG } from '../messages.mjs';
 import {
   formatTopHeader,
   formatProjectListItem,
-  formatProjectSummary,
+  formatProjectsListHeader,
   formatBasicInfo,
   formatPackageStatus,
-  formatPackageOutdated,
-  formatGitStatus,
-  formatGitFileStatus,
-  formatRecentCommits,
   formatScriptsPanel,
   formatSystemStatus,
   formatQuickActionsFooter,
   formatNavFooter,
-  formatDetailTitle,
   formatProjectsLabel,
   formatLoadingPanel,
 } from './dashboard-format.mjs';
 import { createBlessedScreen, createDashboardLayout } from './blessed-layout.mjs';
-import { showToast, showActionMenu, showHelp, showPrompt } from './blessed-modals.mjs';
+import {
+  showToast,
+  showActionMenu,
+  showHelp,
+  showPrompt,
+  showPortLaunchConfirm,
+  isModalActive,
+  nextModalFrame,
+} from './blessed-modals.mjs';
 
 const SCAN_RENDER_MS = 250;
 
@@ -48,7 +48,6 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
     filteredProjects: [],
     selectedIdx: 0,
     searchQuery: '',
-    customPort: null,
     customMemoryGb: getMemoryGb(),
     lastScanAt: Date.now(),
     focusPanel: 'projects',
@@ -85,24 +84,61 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
 
   function updateHeader() {
     ui.header.setContent(formatTopHeader(state.filteredProjects.length, scanAge()));
+    ui.projectHeader.setContent(formatProjectsListHeader());
     ui.projectList.setLabel(formatProjectsLabel(state.filteredProjects.length));
     ui.quickFooter.setContent(formatQuickActionsFooter());
-    ui.navFooter._default = formatNavFooter().replace(
-      '{right}{green-fg}⚡ Ready{/}  {cyan-fg}{/}{/right}',
-      `{right}{green-fg}⚡ Ready{/}  {cyan-fg}${state.filteredProjects.length} projects{/}{/right}`
+    ui.navFooter.setContent(formatNavFooter(state.filteredProjects.length));
+  }
+
+  async function refreshPortStatus(proj, { retries = 4 } = {}) {
+    if (!proj) return;
+
+    let status = null;
+    for (let i = 0; i < retries; i++) {
+      status = await getPortStatus(proj.port);
+      if (status.isFree || i === retries - 1) break;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+
+    ui.panels.basic.setContent(
+      formatBasicInfo(proj, null, status.valid ? status : null)
     );
-    ui.navFooter.setContent(ui.navFooter._default);
+    scheduleRender();
   }
 
-  function applyGitPanels(proj) {
-    ui.panels.git.setContent(formatGitStatus(proj));
-    ui.panels.gitFiles.setContent(formatGitFileStatus(proj));
-    ui.panels.commits.setContent(formatRecentCommits(proj));
-  }
+  async function confirmPortForLaunch(proj) {
+    const detected = proj.port;
+    const status = await getPortStatus(detected);
+    if (!status.valid) {
+      showToast(screen, ui.navFooter, `Invalid port: ${detected}`, 'red');
+      return null;
+    }
 
-  function applyOutdatedPanels(proj) {
-    ui.panels.outdated.setContent(formatPackageOutdated(proj));
-    ui.panels.pkg.setContent(formatPackageStatus(proj));
+    await nextModalFrame(screen);
+
+    const value = await showPortLaunchConfirm(screen, {
+      projectName: proj.name,
+      detected,
+      isFree: status.isFree,
+      freePort: status.freePort,
+      onPortFreed: () => refreshPortStatus(proj),
+    });
+    if (value == null) return null;
+
+    const port = validatePort(String(value).trim());
+    if (port == null) {
+      showToast(screen, ui.navFooter, 'Invalid port (1–65535)', 'red');
+      return null;
+    }
+
+    const chosen = await getPortStatus(port);
+    if (!chosen.valid || !chosen.isFree) {
+      const alt = chosen.valid ? chosen.freePort : port;
+      showToast(screen, ui.navFooter, `Port ${port} is in use — try ${alt}`, 'yellow');
+      return null;
+    }
+
+    return port;
   }
 
   function fillDetailPanelsFast(proj) {
@@ -111,30 +147,15 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
     applyProjectMetaFast(proj);
     if (!state.cachedSystemInfo) state.cachedSystemInfo = getSystemInfo();
 
-    ui.detailGrid.setLabel(formatDetailTitle(proj));
-    ui.panels.basic.setContent(formatBasicInfo(proj, state.customPort));
+    ui.panels.basic.setContent(formatBasicInfo(proj));
+    ui.panels.pkg.setLabel(` PACKAGE STATUS (${proj.pkgMgr}) `);
     ui.panels.pkg.setContent(formatPackageStatus(proj));
     ui.panels.scripts.setContent(formatScriptsPanel(proj));
     ui.panels.system.setContent(formatSystemStatus(state.cachedSystemInfo));
-    ui.panels.outdated.setContent(
-      proj._outdatedLoaded
-        ? formatPackageOutdated(proj)
-        : formatLoadingPanel(
-            proj.installStatus === 'installed' ? 'Checking outdated…' : 'Loading outdated…'
-          )
-    );
-
-    if (proj._gitLoaded) {
-      applyGitPanels(proj);
-      return;
-    }
-
-    ui.panels.git.setContent(formatLoadingPanel('Loading git…'));
-    ui.panels.gitFiles.setContent(formatLoadingPanel('Loading git…'));
-    ui.panels.commits.setContent(formatLoadingPanel('Loading commits…'));
+    refreshPortStatus(proj);
   }
 
-  function refreshListItem(proj, { updateSummary = true } = {}) {
+  function refreshListItem(proj) {
     const idx = state.filteredProjects.indexOf(proj);
     const listLen = ui.projectList.items?.length ?? 0;
     const filteredLen = state.filteredProjects.length;
@@ -153,11 +174,19 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
       );
     }
 
-    if (updateSummary) {
-      ui.summaryBox.setContent(formatProjectSummary(state.filteredProjects, { scanning: state.scanning }));
+    if (selectedProject() === proj) {
+      fillDetailPanelsFast(proj);
     }
 
     scheduleRender();
+  }
+
+  function autoLoadSelectedDetails() {
+    if (state.filteredProjects.length === 0) return;
+
+    state.selectedIdx = Math.min(state.selectedIdx, state.filteredProjects.length - 1);
+    ui.projectList.select(state.selectedIdx);
+    updateDetails(state.filteredProjects[state.selectedIdx]);
   }
 
   function renderProjectList() {
@@ -166,7 +195,6 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
         ? state.filteredProjects.map((p, i) => formatProjectListItem(p, i === state.selectedIdx))
         : ['{center}{gray-fg}Scanning…{/}{/center}']
     );
-    ui.summaryBox.setContent(formatProjectSummary(state.filteredProjects, { scanning: state.scanning }));
     updateHeader();
     scheduleRender();
   }
@@ -183,34 +211,13 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
         if (!installToken.isCurrent(gen)) return;
 
         if (proj) {
-          refreshListItem(proj, { updateSummary: false });
+          refreshListItem(proj);
           return;
         }
 
         installEnrichmentActive = false;
-        ui.summaryBox.setContent(formatProjectSummary(state.filteredProjects, { scanning: state.scanning }));
         scheduleRender();
       },
-    });
-  }
-
-  function loadOutdatedForSelected() {
-    const proj = selectedProject();
-    if (!proj) return;
-
-    const loadId = detailToken.next();
-    ui.panels.outdated.setContent(formatLoadingPanel('Checking outdated…'));
-    scheduleRender();
-
-    scheduleIdle(() => {
-      if (!detailToken.isCurrent(loadId)) return;
-      loadProjectFsMeta(proj);
-      loadProjectOutdated(proj, { force: true });
-      if (!detailToken.isCurrent(loadId)) return;
-
-      applyOutdatedPanels(proj);
-      scheduleRender();
-      showToast(screen, ui.navFooter, `Outdated: ${proj.stats?.outdatedCount ?? 0} packages`, 'cyan', 2500);
     });
   }
 
@@ -227,11 +234,6 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
         fillDetailPanelsFast(p);
         refreshListItem(p);
       },
-      onGit: (p) => {
-        applyGitPanels(p);
-        refreshListItem(p);
-      },
-      onOutdated: applyOutdatedPanels,
       onDone: scheduleRender,
     });
   }
@@ -241,16 +243,13 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
     renderProjectList();
 
     if (state.filteredProjects.length === 0) {
-      ui.detailGrid.setLabel(' DETAILS ');
       for (const panel of Object.values(ui.panels)) {
         panel.setContent('{center}{yellow-fg}No projects found{/}{/center}');
       }
       return;
     }
 
-    state.selectedIdx = Math.min(state.selectedIdx, state.filteredProjects.length - 1);
-    ui.projectList.select(state.selectedIdx);
-    updateDetails(state.filteredProjects[state.selectedIdx]);
+    autoLoadSelectedDetails();
   }
 
   async function doScan() {
@@ -268,8 +267,6 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
 
     ui.header.setContent(formatTopHeader(0, 0));
     ui.projectList.setItems(['{center}{gray-fg}Scanning projects…{/}{/center}']);
-    ui.summaryBox.setContent(formatProjectSummary([], { scanning: true }));
-    ui.detailGrid.setLabel(' DETAILS ');
 
     for (const panel of Object.values(ui.panels)) {
       panel.setContent(formatLoadingPanel('Scanning…'));
@@ -297,6 +294,7 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
           if (now - lastRender < SCAN_RENDER_MS && projects.length > 2) return;
           lastRender = now;
           renderProjectList();
+          autoLoadSelectedDetails();
         },
       });
     } catch (err) {
@@ -318,20 +316,35 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
       return showToast(screen, ui.navFooter, MSG.noScriptFor(actionLabel(script), proj.name), 'yellow');
     }
 
+    let launchPort = null;
+    if (needsPort(script)) {
+      launchPort = await confirmPortForLaunch(proj);
+      if (launchPort == null) return;
+    }
+
     const code = await executeAction(proj, script, {
-      customPort: state.customPort,
+      customPort: launchPort,
       memoryGb: state.customMemoryGb,
-      onBeforeLaunch: () => screen.destroy(),
+      fromTui: true,
+      onBeforeLaunch: async () => {
+        screen.destroy();
+        await restoreStdinForPrompt();
+      },
     });
     process.exit(code);
   }
 
   async function pickAndRun() {
+    if (isModalActive()) return;
+
     const proj = selectedProject();
     if (!proj) return;
 
     const script = await showActionMenu(screen, proj);
-    if (script) await runScript(script);
+    if (!script) return;
+
+    await nextModalFrame(screen);
+    await runScript(script);
   }
 
   function openExplorer() {
@@ -356,12 +369,42 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
 
   warmSystemInfoCache();
 
+  const DBL_CLICK_MS = 450;
+  let listClickState = { idx: -1, count: 0, timer: null };
+
+  function onProjectListActivate(idx) {
+    if (idx !== listClickState.idx) {
+      clearTimeout(listClickState.timer);
+      listClickState = {
+        idx,
+        count: 1,
+        timer: setTimeout(() => {
+          listClickState = { idx: -1, count: 0, timer: null };
+        }, DBL_CLICK_MS),
+      };
+      return;
+    }
+
+    listClickState.count += 1;
+    if (listClickState.count >= 2) {
+      clearTimeout(listClickState.timer);
+      listClickState = { idx: -1, count: 0, timer: null };
+      pickAndRun();
+    }
+  }
+
   ui.projectList.on('select item', (_, idx) => {
     state.selectedIdx = idx;
     updateDetails(state.filteredProjects[idx]);
+    onProjectListActivate(idx);
+  });
+
+  ui.projectList.on('action', (_, idx) => {
+    onProjectListActivate(idx ?? state.selectedIdx);
   });
 
   screen.key(['enter'], () => {
+    if (isModalActive()) return;
     if (state.focusPanel === 'projects') pickAndRun();
   });
 
@@ -375,22 +418,18 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
   screen.key(['i', 'I'], () => runScript(ACTION.INSTALL));
   screen.key(['c'], () => runScript(ACTION.CI));
   screen.key(['d', 'D'], () => runScript('dev'));
-  screen.key(['s', 'S'], () => runScript('start'));
+  screen.key(['s', 'S'], () => pickAndRun());
   screen.key(['b', 'B'], () => runScript('build'));
   screen.key(['t', 'T'], () => openTerminal());
   screen.key(['e', 'E'], () => openExplorer());
-  screen.key(['g', 'G'], () => {
-    showToast(screen, ui.navFooter, `Git: ${selectedProject()?.git?.statusLabel || '—'}`, 'magenta', 3000);
-  });
-  screen.key(['u', 'U'], () => loadOutdatedForSelected());
-  screen.key(['o', 'O'], () => pickAndRun());
 
   screen.key(['k', 'K'], async () => {
     const proj = selectedProject();
     if (!proj) return;
 
-    const port = state.customPort ?? proj.port;
+    const port = proj.port;
     const result = await killPort(port);
+    await refreshPortStatus(proj);
 
     if (result.wasFree) {
       showToast(screen, ui.navFooter, `Port ${port} is already free`, 'gray');
@@ -410,32 +449,7 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
     showToast(screen, ui.navFooter, `Port ${port} still in use`, 'yellow');
   });
 
-  screen.key(['p', 'P'], async () => {
-    const proj = selectedProject();
-    if (!proj) return;
-
-    const value = await showPrompt(
-      screen,
-      { label: ' ⚙ Port ', style: { border: { fg: 'yellow' } } },
-      `Port for ${proj.name}:`,
-      String(state.customPort ?? proj.port)
-    );
-    if (value == null) return;
-
-    const trimmed = String(value).trim();
-    if (!trimmed) {
-      state.customPort = await findFreePort(proj.port);
-    } else {
-      const num = parseInt(trimmed, 10);
-      state.customPort = (num >= 1 && num <= 65535) ? num : proj.port;
-      if (!(await isPortFree(state.customPort))) {
-        state.customPort = await findFreePort(state.customPort);
-      }
-    }
-
-    updateDetails(proj);
-    showToast(screen, ui.navFooter, `Port: ${state.customPort}`, 'green');
-  });
+  screen.key(['o', 'O'], () => runScript('start'));
 
   screen.key(['m', 'M'], async () => {
     const info = getMemoryInfo();
@@ -482,6 +496,7 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
   });
 
   screen.key(['escape'], () => {
+    if (isModalActive()) return;
     if (!state.searchQuery) return;
     state.searchQuery = '';
     state.selectedIdx = 0;
@@ -496,8 +511,8 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
   }, 30000);
 
   ui.header.setContent(formatTopHeader(0, 0));
+  ui.projectHeader.setContent(formatProjectsListHeader());
   ui.projectList.setItems(['{center}{gray-fg}Starting…{/}{/center}']);
-  ui.summaryBox.setContent(formatProjectSummary([], { scanning: true }));
   ui.quickFooter.setContent(formatQuickActionsFooter());
   ui.navFooter.setContent('{gray-fg}Ready to scan…{/}');
   screen.render();

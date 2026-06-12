@@ -5,7 +5,7 @@ const PANEL_STYLE = {
   border: { type: 'line' },
   tags: true,
   padding: { left: 1, right: 1, top: 0, bottom: 0 },
-  style: { border: { fg: 'cyan' }, fg: 'white' },
+  style: { border: { fg: 'cyan' }, fg: 'white', bg: 'black' },
   scrollable: true,
   alwaysScroll: true,
 };
@@ -16,6 +16,7 @@ export function createBlessedScreen() {
     title: `${APP.displayName} v${APP.version}`,
     fullUnicode: true,
     terminal: process.env.TERM || 'xterm-256color',
+    style: { bg: 'black' },
   });
 }
 
@@ -30,11 +31,22 @@ export function createDashboardLayout(screen) {
     style: { fg: 'white', bg: 'black' },
   });
 
-  const projectList = blessed.list({
+  const projectHeader = blessed.box({
     top: 3,
     left: 0,
-    width: '32%',
-    height: '48%',
+    width: '26%',
+    height: 1,
+    tags: true,
+    content: '',
+    style: { fg: 'white', bg: 'black' },
+    padding: { left: 2 },
+  });
+
+  const projectList = blessed.list({
+    top: 4,
+    left: 0,
+    width: '26%',
+    height: '100%-6',
     label: ' PROJECTS ',
     keys: true,
     vi: true,
@@ -43,40 +55,46 @@ export function createDashboardLayout(screen) {
     scrollbar: { ch: '▓', style: { bg: 'cyan' } },
     style: {
       border: { fg: 'cyan' },
+      bg: 'black',
       selected: { bg: 'blue', fg: 'white', bold: true },
-      item: { fg: 'white' },
+      item: { fg: 'white', bg: 'black' },
     },
     padding: { left: 1, top: 0 },
   });
 
-  const summaryBox = blessed.box({
-    top: '51%',
-    left: 0,
-    width: '32%',
-    height: '100%-51%-4',
-    ...PANEL_STYLE,
-    label: ' SUMMARY ',
-  });
-
-  const detailGrid = blessed.box({
-    top: 3,
-    left: '32%',
-    width: '68%',
-    height: '100%-6',
-    label: ' DETAILS ',
-    tags: true,
-    style: { border: { fg: 'cyan' } },
-  });
-
   const panels = {
-    basic: blessed.box({ parent: detailGrid, top: 0, left: 0, width: '33%', height: '34%', ...PANEL_STYLE, label: ' BASIC INFO ' }),
-    pkg: blessed.box({ parent: detailGrid, top: 0, left: '33%', width: '34%', height: '34%', ...PANEL_STYLE, label: ' PACKAGE STATUS ' }),
-    outdated: blessed.box({ parent: detailGrid, top: 0, left: '67%', width: '33%', height: '34%', ...PANEL_STYLE, label: ' OUTDATED ' }),
-    git: blessed.box({ parent: detailGrid, top: '34%', left: 0, width: '33%', height: '33%', ...PANEL_STYLE, label: ' GIT STATUS ' }),
-    gitFiles: blessed.box({ parent: detailGrid, top: '34%', left: '33%', width: '34%', height: '33%', ...PANEL_STYLE, label: ' GIT FILES ' }),
-    commits: blessed.box({ parent: detailGrid, top: '34%', left: '67%', width: '33%', height: '33%', ...PANEL_STYLE, label: ' RECENT COMMITS ' }),
-    scripts: blessed.box({ parent: detailGrid, top: '67%', left: 0, width: '50%', height: '33%', ...PANEL_STYLE, label: ' SCRIPTS ' }),
-    system: blessed.box({ parent: detailGrid, top: '67%', left: '50%', width: '50%', height: '33%', ...PANEL_STYLE, label: ' SYSTEM STATUS ' }),
+    basic: blessed.box({
+      top: 3,
+      left: '26%',
+      width: '37%',
+      height: '50%',
+      ...PANEL_STYLE,
+      label: ' BASIC INFO ',
+    }),
+    pkg: blessed.box({
+      top: 3,
+      left: '63%',
+      width: '37%',
+      height: '50%',
+      ...PANEL_STYLE,
+      label: ' PACKAGE STATUS ',
+    }),
+    scripts: blessed.box({
+      top: '50%',
+      left: '26%',
+      width: '37%',
+      height: '50%-3',
+      ...PANEL_STYLE,
+      label: ' SCRIPTS ',
+    }),
+    system: blessed.box({
+      top: '50%',
+      left: '63%',
+      width: '37%',
+      height: '50%-3',
+      ...PANEL_STYLE,
+      label: ' SYSTEM STATUS ',
+    }),
   };
 
   const quickFooter = blessed.box({
@@ -95,13 +113,13 @@ export function createDashboardLayout(screen) {
     width: '100%',
     height: 2,
     tags: true,
-    padding: { left: 1 },
+    padding: { left: 1, right: 1 },
     style: { fg: 'gray', bg: 'black' },
   });
 
-  for (const widget of [header, projectList, summaryBox, detailGrid, quickFooter, navFooter]) {
+  for (const widget of [header, projectHeader, projectList, ...Object.values(panels), quickFooter, navFooter]) {
     screen.append(widget);
   }
 
-  return { header, projectList, summaryBox, detailGrid, panels, quickFooter, navFooter };
+  return { header, projectHeader, projectList, panels, quickFooter, navFooter };
 }

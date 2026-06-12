@@ -57,6 +57,13 @@ export function msgPortStatus(detected, free) {
   return `${fg.yellow}⚠ port ${detected} is in use${R}  ${fg.bgreen}→ next free: ${free}${R}`;
 }
 
+export function msgPortStatusBlessed(port, { isFree, freePort }) {
+  if (isFree) {
+    return `{green-fg}✓ port ${port} is available{/}`;
+  }
+  return `{yellow-fg}⚠ port ${port} is in use{/}  {green-fg}→ use :${freePort}{/}`;
+}
+
 export function msgPortBusy(port, bumped) {
   return `${fg.yellow}Port ${port} is in use — using ${bumped}${R}`;
 }

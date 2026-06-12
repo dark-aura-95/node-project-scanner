@@ -2,6 +2,32 @@
 
 All notable changes to **node-project-scanner** (`nps`) are documented here.
 
+## [1.1.2] - 2026-06-12
+
+### Added
+
+- **Next free port in UI** — when a port is busy, basic info and the confirm dialog show `Use Port`, `Use URL`, and pre-fill the next free port
+- **Auto-populate port field** — confirm dialog fills the detected port when free, next free port when busy, and the original port after a successful kill
+
+### Fixed
+
+- **Kill port on Windows** — correctly detects and kills processes bound to `0.0.0.0` (dev servers); uses PowerShell `Get-NetTCPConnection` and `taskkill /T /F`
+- **Port status after kill** — basic info refreshes after `K` and no longer stays stuck on “in use” from stale netstat entries
+- **Kill then launch** — confirm dialog stays open after kill with the freed port filled in; press Enter to launch
+
+## [1.1.1] - 2026-06-12
+
+### Added
+
+- **Kill port in launch confirm** — when a port is busy, press `K` in the port confirm dialog to free it before launching
+
+### Fixed
+
+- **Port confirm dialog layout** — message, port input, and hints no longer overlap (custom modal instead of `blessed.prompt` fixed positions)
+- **Port confirm input** — first keystroke replaces the suggested port instead of appending to it
+- **Basic info port status** — in-use ports now show `⚠ in use` instead of a misleading green checkmark
+- **Port confirm crash** — fixed `TypeError` from invalid textbox listener API on neo-blessed
+
 ## [1.1.0] - 2026-06-11
 
 ### Added

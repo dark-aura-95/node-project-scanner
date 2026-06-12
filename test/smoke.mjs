@@ -65,12 +65,10 @@ const { buildExcludeSet } = await import('../src/utils.mjs');
 const { filterProjects, matchesProjectQuery } = await import('../src/project-filter.mjs');
 const { parseScriptMeta, buildActions, hasScript, ACTION } = await import('../src/project.mjs');
 const { detectBuilderFast, detectPkgManagerFromJson, detectPkgManagerAndLock } = await import('../src/detect.mjs');
-const { detectPortFromScripts, validatePort, killPort } = await import('../src/port.mjs');
+const { detectPortFromScripts, validatePort, killPort, findPidsOnPort, isPortFree } = await import('../src/port.mjs');
 const { detectInstallStatusLight } = await import('../src/install.mjs');
 const {
   loadProjectFsMeta,
-  loadProjectGit,
-  loadProjectOutdated,
   loadProjectInstallStatus,
   loadProjectDetails,
   applyProjectMetaFast,
@@ -125,6 +123,8 @@ ok('validatePort', () => {
   assert.equal(validatePort(0), null);
   assert.equal(validatePort(70000), null);
   assert.equal(validatePort('abc'), null);
+  assert.equal(validatePort('301qq'), null);
+  assert.equal(validatePort('330011'), null);
 });
 
 ok('detectPortFromScripts', () => {
@@ -169,17 +169,12 @@ await okAsync('lazy-load pipeline on project', async () => {
   await new Promise((resolve) => {
     loadProjectDetails(proj, {
       onFs: () => stages.push('fs'),
-      onGit: () => stages.push('git'),
-      onOutdated: () => stages.push('outdated'),
       onDone: resolve,
     });
   });
 
-  assert.deepEqual(stages, ['fs', 'git', 'outdated']);
+  assert.deepEqual(stages, ['fs']);
   assert.equal(proj._fsMetaLoaded, true);
-  assert.equal(proj._gitLoaded, true);
-  assert.equal(proj._outdatedLoaded, true);
-  assert.ok(proj.git);
 });
 
 ok('loadProjectInstallStatus', () => {
@@ -219,7 +214,7 @@ console.log('\nCLI tests (non-interactive)');
 await okAsync('--version', async () => {
   const { code, stdout } = await runCli(['--version']);
   assert.equal(code, 0);
-  assert.match(stdout, /1\.1\.0/);
+  assert.match(stdout, /1\.1\.2/);
 });
 
 await okAsync('scan --list-only', async () => {
@@ -281,6 +276,68 @@ await okAsync('killPort on free port', async () => {
   assert.deepEqual(result.killed, []);
 });
 
+await okAsync('isPortFree detects 0.0.0.0 listener', async () => {
+  const { createServer } = await import('node:net');
+  const port = 45680;
+  const srv = createServer();
+  await new Promise((resolve, reject) => srv.listen(port, '0.0.0.0', (err) => (err ? reject(err) : resolve())));
+  try {
+    assert.equal(await isPortFree(port), false);
+    assert.ok((await findPidsOnPort(port)).length >= 1);
+  } finally {
+    srv.close();
+  }
+});
+
+await okAsync('getPortStatus trusts bind result after stale pid lookup', async () => {
+  const { createServer } = await import('node:net');
+  const { getPortStatus, findPidsOnPort } = await import('../src/port.mjs');
+  const port = 45682;
+  const srv = createServer();
+  await new Promise((resolve, reject) => srv.listen(port, '0.0.0.0', (err) => (err ? reject(err) : resolve())));
+  try {
+    const busy = await getPortStatus(port);
+    assert.equal(busy.isFree, false);
+    assert.ok(busy.freePort >= port);
+    assert.ok((await findPidsOnPort(port)).length >= 1);
+  } finally {
+    srv.close();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  const free = await getPortStatus(port);
+  assert.equal(free.isFree, true);
+  assert.equal(free.freePort, port);
+});
+
+await okAsync('killPort terminates 0.0.0.0 listener', async () => {
+  const { spawn } = await import('node:child_process');
+  const port = 45681;
+  const holder = spawn(process.execPath, ['test/port-hold.mjs', String(port), '0.0.0.0'], {
+    cwd: root,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('holder timeout')), 5000);
+    holder.stdout.on('data', (chunk) => {
+      if (chunk.toString().includes('ready')) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    holder.on('error', reject);
+  });
+
+  try {
+    const result = await killPort(port);
+    assert.ok(result.killed.length >= 1);
+    assert.equal(result.nowFree, true);
+  } finally {
+    holder.kill();
+  }
+});
+
 await okAsync('info missing project exits 1', async () => {
   const { code, stderr } = await runCli(['info', 'nonexistent-xyz-404', '.']);
   assert.equal(code, 1);
@@ -306,7 +363,7 @@ await okAsync('default scan non-tty prints table', async () => {
 
 console.log('\nFormatter tests');
 
-const { formatProjectListItem, formatBasicInfo, formatGitStatus, formatRecentCommits } =
+const { formatProjectListItem, formatBasicInfo } =
   await import('../src/ui/dashboard-format.mjs');
 const { renderAnsiProjectRow } = await import('../src/ui/format.mjs');
 const { runInteractive } = await import('../src/ui/router.mjs');
@@ -320,23 +377,38 @@ ok('formatProjectListItem renders', () => {
 
 ok('formatBasicInfo renders', () => {
   const text = formatBasicInfo(projects[0]);
-  assert.match(text, /BASIC INFO/);
+  assert.match(text, /Name/);
   assert.match(text, /Folder/);
+  assert.match(text, /localhost:3000/);
+});
+
+ok('formatBasicInfo shows next free port when busy', () => {
+  const text = formatBasicInfo(projects[0], null, {
+    valid: true,
+    port: 3000,
+    isFree: false,
+    freePort: 3001,
+  });
+  assert.match(text, /Use Port/);
+  assert.match(text, /:3001/);
+  assert.match(text, /localhost:3001/);
+});
+
+const { msgPortStatusBlessed } = await import('../src/messages.mjs');
+
+ok('msgPortStatusBlessed marks in-use ports correctly', () => {
+  const free = msgPortStatusBlessed(3000, { isFree: true, freePort: 3000 });
+  const busy = msgPortStatusBlessed(3000, { isFree: false, freePort: 3001 });
+  assert.match(free, /available/);
+  assert.doesNotMatch(free, /in use/);
+  assert.match(busy, /in use/);
+  assert.match(busy, /3001/);
+  assert.doesNotMatch(busy, /✓ port 3000 is available/);
 });
 
 ok('renderAnsiProjectRow renders', () => {
   const row = renderAnsiProjectRow(projects[0], false);
   assert.match(row, /node-project-scanner/);
-});
-
-await okAsync('git + commits format after load', async () => {
-  const proj = structuredClone(projects[0]);
-  loadProjectFsMeta(proj);
-  loadProjectGit(proj);
-  const gitPanel = formatGitStatus(proj);
-  const commitsPanel = formatRecentCommits(proj);
-  assert.match(gitPanel, /GIT STATUS/);
-  assert.match(commitsPanel, /RECENT COMMITS|No commits|commit/i);
 });
 
 await okAsync('router non-tty fallback', async () => {

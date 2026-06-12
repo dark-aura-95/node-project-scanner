@@ -25,15 +25,12 @@ export async function promptPort(proj, currentPort) {
   return port;
 }
 
-export async function executeAction(proj, script, { customPort, memoryGb, onBeforeLaunch } = {}) {
-  let port = customPort ?? null;
+export async function executeAction(proj, script, { customPort, memoryGb, onBeforeLaunch, fromTui = false } = {}) {
+  if (onBeforeLaunch) await onBeforeLaunch();
 
-  if (needsPort(script)) {
-    if (onBeforeLaunch) onBeforeLaunch();
-    port = await promptPort(proj, customPort ?? proj.port);
-  } else if (onBeforeLaunch) {
-    onBeforeLaunch();
-  }
-
-  return launchProject(proj, script, { port, memoryGb, interactive: false });
+  return launchProject(proj, script, {
+    port: customPort,
+    memoryGb,
+    interactive: !fromTui && customPort == null && needsPort(script),
+  });
 }
