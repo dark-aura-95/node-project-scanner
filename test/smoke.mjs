@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -63,9 +65,10 @@ console.log('\nModule tests');
 const { buildProjects, buildProjectsAsync, findProject, refineProject } = await import('../src/scanner.mjs');
 const { buildExcludeSet } = await import('../src/utils.mjs');
 const { filterProjects, matchesProjectQuery } = await import('../src/project-filter.mjs');
-const { parseScriptMeta, buildActions, hasScript, ACTION } = await import('../src/project.mjs');
+const { parseScriptMeta, buildActions, buildActionMenuRows, hasScript, ACTION } = await import('../src/project.mjs');
 const { detectBuilderFast, detectPkgManagerFromJson, detectPkgManagerAndLock } = await import('../src/detect.mjs');
 const { detectPortFromScripts, validatePort, killPort, findPidsOnPort, isPortFree } = await import('../src/port.mjs');
+const { removeReinitArtifacts, REINIT_DIRS } = await import('../src/reinit.mjs');
 const { detectInstallStatusLight } = await import('../src/install.mjs');
 const {
   loadProjectFsMeta,
@@ -141,6 +144,21 @@ ok('detectInstallStatusLight', () => {
   assert.ok(['installed', 'missing'].includes(status));
 });
 
+ok('REINIT_DIRS includes common artifacts', () => {
+  assert.ok(REINIT_DIRS.includes('node_modules'));
+  assert.ok(REINIT_DIRS.includes('.next'));
+  assert.ok(REINIT_DIRS.includes('dist'));
+});
+
+ok('removeReinitArtifacts on empty dir', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nps-reinit-'));
+  try {
+    assert.deepEqual(removeReinitArtifacts(dir), []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 ok('detectPkgManagerAndLock on repo', () => {
   const info = detectPkgManagerAndLock(root);
   assert.ok(['npm', 'pnpm', 'yarn', 'bun'].includes(info.pkgMgr));
@@ -209,12 +227,34 @@ ok('hasScript install always true', () => {
   assert.equal(hasScript(projects[0], ACTION.INSTALL), true);
 });
 
+ok('hasScript reinit always true', () => {
+  assert.equal(hasScript(projects[0], ACTION.REINIT), true);
+});
+
+ok('buildActions includes reinit', () => {
+  const actions = buildActions(projects[0]);
+  assert.ok(actions.some((a) => a.script === ACTION.REINIT));
+});
+
+ok('buildActions run scripts before package actions', () => {
+  const actions = buildActions(projects[0]);
+  const runIdx = actions.findIndex((a) => a.group === 'run');
+  const depsIdx = actions.findIndex((a) => a.group === 'deps');
+  if (runIdx >= 0 && depsIdx >= 0) assert.ok(runIdx < depsIdx);
+});
+
+ok('buildActionMenuRows includes group headers', () => {
+  const rows = buildActionMenuRows(projects[0]);
+  assert.ok(rows.some((r) => r.type === 'header' && r.label === 'Run'));
+  assert.ok(rows.some((r) => r.type === 'header' && r.label === 'Package'));
+});
+
 console.log('\nCLI tests (non-interactive)');
 
 await okAsync('--version', async () => {
   const { code, stdout } = await runCli(['--version']);
   assert.equal(code, 0);
-  assert.match(stdout, /1\.1\.2/);
+  assert.match(stdout, /1\.1\.4/);
 });
 
 await okAsync('scan --list-only', async () => {

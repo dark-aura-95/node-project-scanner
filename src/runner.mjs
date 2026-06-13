@@ -1,7 +1,8 @@
 import { spawn } from 'child_process';
 import { findFreePort, isPortFree, killPort } from './port.mjs';
 import { getCiArgs } from './install.mjs';
-import { ACTION, needsPort, isDirectAction } from './project.mjs';
+import { removeReinitArtifacts } from './reinit.mjs';
+import { ACTION, needsPort } from './project.mjs';
 import { B, fg, R, DIM, W } from './theme.mjs';
 import { msgPortStatus, msgPortBusy, msgPortKilled, msgPortKillFailed } from './messages.mjs';
 import { buildNodeOptions, getMemoryGb, memoryMb } from './memory.mjs';
@@ -73,6 +74,31 @@ export async function preparePort(proj, requestedPort, interactive = false, { ki
   return port;
 }
 
+export function printReinit(proj, memoryGb, removed) {
+  const w = W();
+  const mem = memoryGb ?? getMemoryGb();
+  process.stdout.write('\n');
+  process.stdout.write(`  ${fg.gray}${'─'.repeat(w - 4)}${R}\n`);
+  process.stdout.write(
+    `  ${B}${fg.bcyan}🔄 Reinit${R}  ${B}${proj.pkgMgr} install${R}  ${DIM}(${proj.name}@${proj.version})${R}\n`
+  );
+  if (removed.length) {
+    process.stdout.write(`  ${DIM}${fg.gray}clean${R}  ${fg.green}✓${R} ${removed.join(', ')}\n`);
+  } else {
+    process.stdout.write(`  ${DIM}${fg.gray}clean${R}  ${DIM}no artifact folders found${R}\n`);
+  }
+  process.stdout.write(`  ${DIM}${fg.gray}mem  ${R}${fg.cyan}${mem} GB${R} ${DIM}(${memoryMb(mem)} MB heap)${R}\n`);
+  process.stdout.write(`  ${DIM}${fg.gray}cwd  ${R}${fg.gray}${proj.relDir}${R}\n`);
+  process.stdout.write(`  ${fg.gray}${'─'.repeat(w - 4)}${R}\n\n`);
+}
+
+export async function reinitProject(proj, { memoryGb } = {}) {
+  const mem = memoryGb ?? getMemoryGb();
+  const removed = removeReinitArtifacts(proj.dir);
+  printReinit(proj, mem, removed);
+  return runProject(proj, ACTION.INSTALL, proj.port, mem);
+}
+
 export function printLaunch(proj, script, port, memoryGb) {
   const w = W();
   const cmd = commandLabel(proj, script);
@@ -117,6 +143,10 @@ export async function launchProject(proj, script, {
 } = {}) {
   let port = proj.port;
   const mem = memoryGb ?? getMemoryGb();
+
+  if (script === ACTION.REINIT) {
+    return reinitProject(proj, { memoryGb: mem });
+  }
 
   if (needsPort(script)) {
     port = await preparePort(proj, requestedPort, interactive, { killPort: shouldKill });

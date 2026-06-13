@@ -185,6 +185,7 @@ export async function runCli(argv) {
       }
 
       const script = opts.script === 'install' ? ACTION.INSTALL
+        : opts.script === 'reinit' ? ACTION.REINIT
         : opts.script === 'ci' ? ACTION.CI
         : opts.script;
 
@@ -217,6 +218,24 @@ export async function runCli(argv) {
 
       const memoryGb = global.memory ?? getMemoryGb();
       const code = await launchProject(proj, ACTION.INSTALL, { memoryGb });
+      process.exit(code);
+    });
+
+  program
+    .command('reinit <project> [dir]')
+    .description('Remove node_modules, build artifacts, and reinstall dependencies')
+    .action(async (project, dir, opts, cmd) => {
+      const global = cmd.parent.opts();
+      const { projects } = getProjects(dir, parseExcludeList(global.exclude));
+      const proj = findProject(projects, project);
+
+      if (!proj) {
+        console.error(`\n  ${MSG.projectNotFound(project)}${R}\n`);
+        process.exit(1);
+      }
+
+      const memoryGb = global.memory ?? getMemoryGb();
+      const code = await launchProject(proj, ACTION.REINIT, { memoryGb });
       process.exit(code);
     });
 

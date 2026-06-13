@@ -10,7 +10,8 @@ Short command: **`nps`**
 src/
 ├── constants.mjs        # App name, version, tagline, shortcuts
 ├── messages.mjs         # Shared user-facing messages
-├── project.mjs          # Script helpers (dev/start/build)
+├── project.mjs          # Script helpers, action groups (Run / Package / …)
+├── reinit.mjs           # Clean artifacts + reinstall
 ├── port.mjs             # Port detect, validate, kill, status
 ├── ui/
 │   ├── blessed.mjs      # TUI controller
@@ -32,6 +33,8 @@ src/
 - Port detection from `.env` files and scripts
 - Port confirm dialog before launch with kill-port support
 - Configurable Node heap memory (`M` / `nps memory`)
+- **Reinit** — clean `node_modules`, build artifacts, and reinstall (`U` / `nps reinit`)
+- **Grouped action menu** — Enter opens Run → Package → Tooling → Scripts sections
 - Hybrid UI: blessed split-panel TUI with ANSI fallback
 - Scriptable subcommands for CI and automation
 
@@ -74,11 +77,12 @@ nps --no-tui
 
 | Key | Action |
 |-----|--------|
-| `Enter` | Action menu (dev, start, build, install, …) |
+| `Enter` | Grouped action menu (Run → Package → Tooling → Scripts) |
 | `D` | Run dev |
 | `S` | Run start |
 | `B` | Run build |
 | `I` | Install dependencies |
+| `U` | Reinit (clean artifacts + reinstall) |
 | `C` | CI install (frozen lockfile) |
 | `K` | Kill process on project port |
 | `M` | Node memory (GB) |
@@ -103,6 +107,15 @@ The port field auto-fills:
 - **Port free** → detected port (e.g. `3000`)
 - **Port in use** → next free port (e.g. `3001`)
 - **After kill** → original detected port (e.g. `3000`), then press Enter to launch
+
+**Action menu** (Enter on a project)
+
+| Section | Actions |
+|---------|---------|
+| Run | `dev`, `start`, `build` |
+| Package | `install`, `reinit`, `ci` (frozen lockfile) |
+| Tooling | `test`, `lint`, `preview`, … |
+| Scripts | any other `package.json` scripts |
 
 ### Commands
 
@@ -136,6 +149,8 @@ nps build my-app
 
 # Install & CI
 nps install my-app
+nps reinit my-app
+nps run my-app --script reinit
 nps run my-app --script ci
 nps run my-app --script test
 ```
@@ -175,13 +190,50 @@ npm test
 
 ## Publish to npm
 
+### Prerequisites
+
+- Node.js 18+
+- [npm](https://www.npmjs.com/) account (`npm login`)
+- Package name `node-project-scanner` available on the registry (or scoped name if you change `package.json`)
+
+### Pre-publish checklist
+
+1. **Tests** — `npm test` must pass (runs smoke tests).
+2. **Version** — bump `package.json` `version` and add a dated entry in [CHANGELOG.md](./CHANGELOG.md).
+3. **Docs** — README highlights and command list match the release.
+4. **Dry run** — inspect the tarball without publishing:
+
+```bash
+npm pack --dry-run
+```
+
+Published files are controlled by the `files` field in `package.json`: `bin`, `src`, `README.md`, `CHANGELOG.md`, `LICENSE`.
+
+### Publish
+
 ```bash
 npm test
 npm login
-npm publish
+npm publish --access public
 ```
 
-**1.1.2 highlights:** Windows kill-port fix, next free port suggestions, auto-fill port in confirm dialog, status refresh after kill. Full notes in [CHANGELOG.md](./CHANGELOG.md).
+`prepublishOnly` runs automatically before publish (`node bin/nps.mjs --version`) as a quick sanity check.
+
+### After publish
+
+```bash
+npm view node-project-scanner version
+npx node-project-scanner@latest --version
+```
+
+Users install globally:
+
+```bash
+npm install -g node-project-scanner
+nps --version
+```
+
+**1.1.4 highlights:** Grouped action menu (Run → Package → Tooling → Scripts), reinit (`U` / `nps reinit`). Full notes in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Requirements
 

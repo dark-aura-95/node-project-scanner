@@ -156,6 +156,7 @@ export function formatBlessedHelp() {
     '',
     '{bold}Actions{/}',
     '  I          Install dependencies',
+    '  U          Reinit (clean artifacts + reinstall)',
     '  C          CI install (frozen lockfile)',
     '  D          Run dev server',
     '  S          Run start script',

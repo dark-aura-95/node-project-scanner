@@ -2,6 +2,22 @@
 
 All notable changes to **node-project-scanner** (`nps`) are documented here.
 
+## [1.1.4] - 2026-06-13
+
+### Added
+
+- **Grouped action menu** — pressing Enter on a project shows actions in sections: **Run** (dev, start, build), **Package** (install, reinit, ci), **Tooling**, then other scripts
+
+### Changed
+
+- Action menu order — run scripts appear before package-related actions in both TUI and ANSI picker
+
+## [1.1.3] - 2026-06-13
+
+### Added
+
+- **Reinit** — `nps reinit <project>`, `--script reinit`, action menu, and `U` in TUI: removes `node_modules`, `build`, `dist`, `.next`, and similar artifact folders then reinstalls dependencies
+
 ## [1.1.2] - 2026-06-12
 
 ### Added

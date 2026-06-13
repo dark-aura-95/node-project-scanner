@@ -416,6 +416,7 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
   });
 
   screen.key(['i', 'I'], () => runScript(ACTION.INSTALL));
+  screen.key(['u', 'U'], () => runScript(ACTION.REINIT));
   screen.key(['c'], () => runScript(ACTION.CI));
   screen.key(['d', 'D'], () => runScript('dev'));
   screen.key(['s', 'S'], () => pickAndRun());

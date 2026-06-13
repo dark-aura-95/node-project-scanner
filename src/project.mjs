@@ -1,9 +1,11 @@
 import { fg, R } from './theme.mjs';
 import { getCiLabel, getInstallLabel } from './install.mjs';
+import { getReinitLabel } from './reinit.mjs';
 
 export const ACTION = {
   INSTALL: '__install__',
   CI: '__ci__',
+  REINIT: '__reinit__',
 };
 
 export const PORT_SCRIPTS = new Set(['dev', 'start']);
@@ -30,8 +32,16 @@ export function isRunnableProject({ hasDev, hasStart, hasBuild, builder }) {
 const RUN_PRIORITY = ['dev', 'start', 'build'];
 const EXTRA_PRIORITY = ['ci', 'test', 'lint', 'preview', 'format', 'typecheck', 'check'];
 
+export const ACTION_GROUP_LABELS = {
+  run: 'Run',
+  deps: 'Package',
+  tooling: 'Tooling',
+  other: 'Scripts',
+};
+
 export function hasScript(proj, script) {
   if (script === ACTION.INSTALL) return true;
+  if (script === ACTION.REINIT) return true;
   if (script === ACTION.CI) return proj.hasLock || proj.hasCiScript;
   const key = `has${script.charAt(0).toUpperCase()}${script.slice(1)}`;
   return Boolean(proj[key]) || script in (proj.scripts || {});
@@ -54,17 +64,19 @@ export function needsPort(script) {
 }
 
 export function isDirectAction(script) {
-  return script === ACTION.INSTALL || script === ACTION.CI;
+  return script === ACTION.INSTALL || script === ACTION.CI || script === ACTION.REINIT;
 }
 
 export function actionLabel(script) {
   if (script === ACTION.INSTALL) return 'install';
+  if (script === ACTION.REINIT) return 'reinit';
   if (script === ACTION.CI) return 'ci';
   return script;
 }
 
 export function actionIcon(script) {
   if (script === ACTION.INSTALL) return '📦';
+  if (script === ACTION.REINIT) return '🔄';
   if (script === ACTION.CI) return '🔒';
   if (script === 'build') return '■';
   if (script === 'test' || script === 'lint') return '◆';
@@ -73,6 +85,7 @@ export function actionIcon(script) {
 
 export function actionCmd(proj, script) {
   if (script === ACTION.INSTALL) return getInstallLabel(proj.pkgMgr);
+  if (script === ACTION.REINIT) return getReinitLabel(proj.pkgMgr);
   if (script === ACTION.CI) {
     return proj.hasLock ? getCiLabel(proj.pkgMgr) : proj.ciCmd;
   }
@@ -97,10 +110,12 @@ export function buildActions(proj) {
     });
   };
 
+  for (const s of RUN_PRIORITY) add(s, 'run');
+
   add(ACTION.INSTALL, 'deps');
+  add(ACTION.REINIT, 'deps');
   if (proj.hasLock) add(ACTION.CI, 'deps');
 
-  for (const s of RUN_PRIORITY) add(s, 'run');
   for (const s of EXTRA_PRIORITY) add(s, 'tooling');
 
   for (const name of Object.keys(proj.scripts || {})) {
@@ -108,6 +123,25 @@ export function buildActions(proj) {
   }
 
   return actions;
+}
+
+export function buildActionMenuRows(proj) {
+  const actions = buildActions(proj);
+  const rows = [];
+  let lastGroup = null;
+
+  for (const action of actions) {
+    if (action.group !== lastGroup) {
+      lastGroup = action.group;
+      rows.push({
+        type: 'header',
+        label: ACTION_GROUP_LABELS[action.group] || action.group,
+      });
+    }
+    rows.push({ type: 'action', action });
+  }
+
+  return rows;
 }
 
 export function installStatusAnsi(status) {

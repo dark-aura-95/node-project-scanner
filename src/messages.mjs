@@ -46,7 +46,7 @@ export function msgEmptyWithTips() {
 export function msgNonInteractiveTip() {
   return [
     `  ${fg.gray}Run in a terminal for interactive picker, or use:${R}`,
-    `  ${fg.gray}  ${APP.bin} run <project>   ${APP.bin} build <project>${R}\n`,
+    `  ${fg.gray}  ${APP.bin} run <project>   ${APP.bin} build <project>   ${APP.bin} reinit <project>${R}\n`,
   ].join('\n');
 }
 

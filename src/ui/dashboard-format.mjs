@@ -1,6 +1,6 @@
 import { APP } from '../constants.mjs';
 import { formatTime } from '../system.mjs';
-import { buildActions } from '../project.mjs';
+import { buildActionMenuRows } from '../project.mjs';
 import { msgPortStatusBlessed } from '../messages.mjs';
 
 const SCRIPTS = ['dev', 'build', 'start', 'test', 'lint', 'ci'];
@@ -158,6 +158,7 @@ export function formatQuickActionsFooter() {
   return (
     '{bold}{cyan-fg}QUICK ACTIONS{/}  ' +
     '{blue-fg}[I]{/} Install  ' +
+    '{magenta-fg}[U]{/} Reinit  ' +
     '{green-fg}[D]{/} Dev  ' +
     '{yellow-fg}[B]{/} Build  ' +
     '{red-fg}[K]{/} Kill Port  ' +
@@ -188,5 +189,9 @@ export function formatProjectsLabel(count) {
 }
 
 export function formatActionMenuItems(proj) {
-  return buildActions(proj).map((a) => `${a.icon} ${a.label}  {gray-fg}${a.cmd}{/}`);
+  return buildActionMenuRows(proj).map((row) =>
+    row.type === 'header'
+      ? `{gray-fg}{bold}  ${row.label}{/}{/}`
+      : `${row.action.icon} ${row.action.label}  {gray-fg}${row.action.cmd}{/}`
+  );
 }

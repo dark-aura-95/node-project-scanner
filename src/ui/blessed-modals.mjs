@@ -1,5 +1,5 @@
 import blessed from 'neo-blessed';
-import { buildActions } from '../project.mjs';
+import { buildActionMenuRows } from '../project.mjs';
 import { getPortStatus, killPort } from '../port.mjs';
 import { formatBlessedHelp } from './format.mjs';
 
@@ -59,8 +59,15 @@ export function showActionMenu(screen, proj) {
   return new Promise((resolve) => {
     if (isModalActive()) return resolve(null);
 
-    const actions = buildActions(proj);
-    if (!actions.length) return resolve(null);
+    const rows = buildActionMenuRows(proj);
+    if (!rows.some((r) => r.type === 'action')) return resolve(null);
+
+    const items = rows.map((row) =>
+      row.type === 'header'
+        ? `{gray-fg}{bold}  ${row.label}{/}{/}`
+        : `${row.action.icon} ${row.action.label}  {gray-fg}${row.action.cmd}{/}`
+    );
+    const scripts = rows.map((row) => (row.type === 'action' ? row.action.script : null));
 
     let settled = false;
     showActionMenu._active = true;
@@ -72,16 +79,19 @@ export function showActionMenu(screen, proj) {
       top: 'center',
       left: 'center',
       width: '72%',
-      height: Math.min(actions.length + 2, 18),
+      height: Math.min(items.length + 2, 22),
       border: { type: 'line' },
       label: ' Select Action ',
       tags: true,
       keys: true,
       vi: true,
       mouse: true,
-      items: actions.map((a) => `${a.icon} ${a.label}  {gray-fg}${a.cmd}{/}`),
+      items,
       style: { border: { fg: 'cyan' }, selected: { bg: 'blue', bold: true }, bg: 'black' },
     });
+
+    const firstActionIdx = scripts.findIndex((s) => s != null);
+    if (firstActionIdx > 0) menu.select(firstActionIdx);
 
     const finish = (script) => {
       if (settled) return;
@@ -93,7 +103,15 @@ export function showActionMenu(screen, proj) {
       setImmediate(() => resolve(script));
     };
 
-    menu.on('select', (_, i) => finish(actions[i].script));
+    menu.on('select', (_, i) => {
+      const script = scripts[i];
+      if (!script) {
+        const next = scripts.findIndex((s, j) => j > i && s != null);
+        if (next >= 0) menu.select(next);
+        return;
+      }
+      finish(script);
+    });
     menu.key(['escape', 'q'], () => finish(null));
     focusModal(screen, menu);
   });

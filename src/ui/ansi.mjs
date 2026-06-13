@@ -1,8 +1,8 @@
 import { buildProjects } from '../scanner.mjs';
-import { buildActions } from '../project.mjs';
+import { buildActionMenuRows } from '../project.mjs';
 import { SHORTCUTS } from '../constants.mjs';
 import { MSG, msgEmptyWithTips } from '../messages.mjs';
-import { fg, R, DIM, cursor } from '../theme.mjs';
+import { fg, R, DIM, B, cursor } from '../theme.mjs';
 import { arrowMenu } from './menu.mjs';
 import {
   formatAnsiHeader,
@@ -46,8 +46,8 @@ export async function runAnsiInteractive(rootDir, excludeSet) {
   const proj = projects[projIdx];
   write(formatAnsiDetails(proj));
 
-  const actions = buildActions(proj);
-  if (actions.length === 0) {
+  const rows = buildActionMenuRows(proj);
+  if (!rows.some((r) => r.type === 'action')) {
     write(`  ${fg.yellow}${MSG.noScripts}${R}\n\n`);
     return 0;
   }
@@ -55,9 +55,16 @@ export async function runAnsiInteractive(rootDir, excludeSet) {
   write(formatStepLabel(2, 3, 'Choose an action'));
 
   const actionIdx = await arrowMenu(
-    actions,
-    (action, sel) => renderAnsiActionRow(action, sel),
-    SHORTCUTS.actionAnsi
+    rows,
+    (row, sel) => {
+      if (row.type === 'header') {
+        const line = `  ${DIM}── ${row.label} ──${R}`;
+        return sel ? `${fg.bwhite}${B} ❯  ${line}${R}` : line;
+      }
+      return renderAnsiActionRow(row.action, sel);
+    },
+    SHORTCUTS.actionAnsi,
+    { isSelectable: (row) => row.type === 'action' }
   );
 
   if (actionIdx < 0) {
@@ -65,7 +72,7 @@ export async function runAnsiInteractive(rootDir, excludeSet) {
     return 0;
   }
 
-  const chosen = actions[actionIdx];
+  const chosen = rows[actionIdx].action;
 
   if (chosen.needsPort) {
     write(formatStepLabel(3, 3, 'Configure port (Enter = auto)'));
