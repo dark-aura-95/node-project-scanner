@@ -158,6 +158,38 @@ export function getExistingCertInfo(projectDir) {
   };
 }
 
+export function getSslStatus(projectDir) {
+  const existing = getExistingCertInfo(projectDir);
+  if (!existing) {
+    return { state: 'none', expiresAt: null, expiresLabel: null, daysLeft: null };
+  }
+
+  if (!existing.expiresAt) {
+    return { state: 'unknown', ...existing, daysLeft: null };
+  }
+
+  const daysLeft = Math.ceil((existing.expiresAt.getTime() - Date.now()) / 86400000);
+
+  if (isCertExpired(existing.expiresAt)) {
+    return { state: 'expired', ...existing, daysLeft };
+  }
+
+  return { state: 'valid', ...existing, daysLeft };
+}
+
+export function formatSslStatusBlessed(status) {
+  switch (status.state) {
+    case 'valid':
+      return `{green-fg}valid until ${status.expiresLabel}{/}  {gray-fg}(${status.daysLeft}d){/}`;
+    case 'expired':
+      return `{red-fg}expired ${status.expiresLabel}{/}  {gray-fg}(press H to renew){/}`;
+    case 'unknown':
+      return '{yellow-fg}present (expiry unknown){/}';
+    default:
+      return '{yellow-fg}none{/}  {gray-fg}(press H to create){/}';
+  }
+}
+
 function hostsToAltNames(hosts) {
   const altNames = [];
   for (const host of hosts) {
@@ -168,6 +200,19 @@ function hostsToAltNames(hosts) {
     }
   }
   return altNames;
+}
+
+export function isCertExpired(expiresAt, now = Date.now()) {
+  if (!expiresAt) return true;
+  return expiresAt.getTime() <= now;
+}
+
+function shouldRenewCert(existing, { force, expiry }) {
+  if (!existing) return false;
+  if (force) return true;
+  if (expiry != null) return true;
+  if (isCertExpired(existing.expiresAt)) return true;
+  return false;
 }
 
 async function generateCertPems(hosts, days) {
@@ -199,10 +244,11 @@ export async function createSslCertificate(projectDir, { expiry, force = false, 
   const paths = getCertPaths(projectDir);
   const existing = getExistingCertInfo(projectDir);
 
-  if (!force && existing) {
+  if (existing && !shouldRenewCert(existing, { force, expiry })) {
     return {
       ok: true,
       created: false,
+      renewed: false,
       skipped: true,
       ...paths,
       existing,
@@ -213,6 +259,7 @@ export async function createSslCertificate(projectDir, { expiry, force = false, 
   }
 
   const resolved = clampExpiry(expiry ?? getSslExpiry());
+  const isRenewal = Boolean(existing);
 
   try {
     fs.mkdirSync(paths.dir, { recursive: true });
@@ -228,12 +275,14 @@ export async function createSslCertificate(projectDir, { expiry, force = false, 
   return {
     ok: true,
     created: true,
+    renewed: isRenewal,
     skipped: false,
     ...paths,
     expiry: { value: resolved.value, unit: resolved.unit },
     days: resolved.days,
     expiresAt,
     hosts,
+    previousExpiresAt: existing?.expiresAt ?? null,
   };
 }
 
@@ -249,5 +298,6 @@ export function formatSslResult(result) {
   }
 
   const duration = result.expiry ? formatExpiry(result.expiry) : `${result.days} days`;
-  return `Created SSL certificate (${duration}, expires ${expiryText})\n  cert: ${result.cert}\n  key:  ${result.key}`;
+  const verb = result.renewed ? 'Renewed' : 'Created';
+  return `${verb} SSL certificate (${duration}, expires ${expiryText})\n  cert: ${result.cert}\n  key:  ${result.key}`;
 }

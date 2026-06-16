@@ -2,6 +2,7 @@ import { APP } from '../constants.mjs';
 import { formatTime } from '../system.mjs';
 import { buildActionMenuRows } from '../project.mjs';
 import { msgPortStatusBlessed } from '../messages.mjs';
+import { formatSslStatusBlessed, getSslStatus } from '../ssl.mjs';
 
 const SCRIPTS = ['dev', 'build', 'start', 'test', 'lint', 'ci'];
 
@@ -77,6 +78,8 @@ export function formatBasicInfo(proj, _customPort, portStatus) {
       );
     }
   }
+
+  lines.push(kv('SSL', formatSslStatusBlessed(getSslStatus(proj.dir)), ''));
 
   lines.push(
     kv('Node Version', proj.nodeVersion || process.version),

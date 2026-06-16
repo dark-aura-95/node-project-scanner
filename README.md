@@ -31,8 +31,8 @@ npm install -g node-project-scanner
 Or run with npx (no install):
 
 ```bash
-npx "C:\path\to\node-project-scanner" scan .
-npx "C:\path\to\node-project-scanner" run my-app --port 3005
+npx node-project-scanner scan .
+npx node-project-scanner run my-app --port 3005
 ```
 
 Or install locally:
@@ -68,8 +68,8 @@ nps --no-tui
 | `C` | CI install (frozen lockfile) |
 | `K` | Kill process on project port |
 | `M` | Node memory (GB) |
-| `T` | Open terminal in project folder |
-| `E` | Open folder in Explorer |
+| `T` | Open terminal in project folder (Windows / macOS / Linux) |
+| `E` | Open folder in file manager (Explorer / Finder / xdg-open) |
 | `O` | More actions (all scripts) |
 | `R` | Rescan |
 | `/` | Search / filter |
@@ -104,7 +104,7 @@ The port field auto-fills:
 ```bash
 # Scan + interactive picker (select, run, build) — in a real terminal
 nps scan .
-npx "C:\path\to\node-project-scanner" scan .
+npx node-project-scanner scan .
 
 # Table only (no picker)
 nps scan . --list-only
@@ -153,7 +153,7 @@ nps run my-app --script test
 - Auto-fills the port field: detected port when free, next free when busy, original port after kill
 - Kill stuck processes on a port (`nps kill-port`, `--kill-port`, `K` in TUI, or `K` in the port confirm dialog)
 - Basic info panel shows live port status and updates after kill (`available` / `in use` / `Use Port`)
-- Reliable on Windows — finds listeners on `0.0.0.0` and kills the full process tree
+- Reliable on **Windows, macOS, and Linux** — finds listeners on `0.0.0.0` and kills the process tree (`taskkill` on Windows, `pkill`/`kill` on Unix)
 
 ## Local development
 
@@ -215,11 +215,12 @@ npm install -g node-project-scanner
 nps --version
 ```
 
-**1.1.5 highlights:** SSL certificate creation (`H` / `nps ssl`), configurable default expiry (`G` / `nps ssl-expiry`). Full notes in [CHANGELOG.md](./CHANGELOG.md).
+**2.0.0 highlights:** `--doctor` health check, `--update` self-update. Full notes in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Requirements
 
 - Node.js 18+
+- **Windows, macOS, and Linux**
 - Works best in a real terminal (TTY) for interactive mode
 
 ## License

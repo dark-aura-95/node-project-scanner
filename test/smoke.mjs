@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const bin = path.join(root, 'bin', 'nps.mjs');
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
 let passed = 0;
 let failed = 0;
@@ -88,6 +89,9 @@ const {
   resetSslExpiry,
   createSslCertificate,
   getCertPaths,
+  isCertExpired,
+  getSslStatus,
+  formatSslStatusBlessed,
 } = await import('../src/ssl.mjs');
 
 const exclude = buildExcludeSet();
@@ -249,9 +253,48 @@ ok('formatExpiry renders singular and plural units', () => {
   assert.equal(formatExpiry({ value: 2, unit: 'week' }), '2 weeks');
 });
 
+ok('formatSslStatusBlessed covers states', () => {
+  assert.match(formatSslStatusBlessed({ state: 'none' }), /none/);
+  assert.match(formatSslStatusBlessed({ state: 'valid', expiresLabel: '1/1/2027', daysLeft: 30 }), /valid until/);
+  assert.match(formatSslStatusBlessed({ state: 'expired', expiresLabel: '1/1/2020' }), /expired/);
+});
+
+ok('getSslStatus reports none without cert files', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nps-ssl-status-'));
+  try {
+    assert.equal(getSslStatus(dir).state, 'none');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+ok('isCertExpired detects past and future dates', () => {
+  assert.equal(isCertExpired(new Date('2020-01-01')), true);
+  assert.equal(isCertExpired(new Date(Date.now() + 86400000)), false);
+  assert.equal(isCertExpired(null), true);
+});
+
 ok('unitToDays converts units', () => {
   assert.equal(unitToDays(2, 'week'), 14);
   assert.equal(unitToDays(1, 'month'), 30);
+});
+
+const { getOpenFolderPlan, getOpenTerminalPlans } = await import('../src/platform.mjs');
+
+ok('getOpenFolderPlan matches platform', () => {
+  const plans = getOpenFolderPlan('/tmp/project');
+  assert.ok(plans.length >= 1);
+  if (process.platform === 'win32') assert.equal(plans[0].cmd, 'explorer');
+  else if (process.platform === 'darwin') assert.equal(plans[0].cmd, 'open');
+  else assert.equal(plans[0].cmd, 'xdg-open');
+});
+
+ok('getOpenTerminalPlans matches platform', () => {
+  const plans = getOpenTerminalPlans('/tmp/project');
+  assert.ok(plans.length >= 1);
+  if (process.platform === 'win32') assert.equal(plans[0].cmd, 'cmd');
+  else if (process.platform === 'darwin') assert.equal(plans[0].cmd, 'osascript');
+  else assert.ok(['gnome-terminal', 'konsole', 'xfce4-terminal', 'bash'].includes(plans[0].cmd));
 });
 
 ok('buildActions includes start script', () => {
@@ -300,7 +343,21 @@ console.log('\nCLI tests (non-interactive)');
 await okAsync('--version', async () => {
   const { code, stdout } = await runCli(['--version']);
   assert.equal(code, 0);
-  assert.match(stdout, /1\.1\.5/);
+  assert.match(stdout, new RegExp(pkg.version.replace(/\./g, '\\.')));
+});
+
+await okAsync('--doctor', async () => {
+  const { code, stdout } = await runCli(['--doctor']);
+  assert.equal(code, 0);
+  assert.match(stdout, /doctor/i);
+  assert.match(stdout, /Node\.js/);
+  assert.match(stdout, /All checks passed/);
+});
+
+await okAsync('--update (up to date)', async () => {
+  const { code, stdout } = await runCli(['--update'], { timeout: 30000 });
+  assert.equal(code, 0);
+  assert.match(stdout, /up to date|Latest/i);
 });
 
 await okAsync('scan --list-only', async () => {
@@ -380,10 +437,53 @@ await okAsync('createSslCertificate writes cert files', async () => {
     const result = await createSslCertificate(dir, { expiry: { value: 7, unit: 'day' }, force: true });
     assert.equal(result.ok, true);
     assert.equal(result.created, true);
+    assert.equal(result.renewed, false);
     const paths = getCertPaths(dir);
     assert.equal(fs.existsSync(paths.cert), true);
     assert.equal(fs.existsSync(paths.key), true);
     assert.ok(result.expiresAt instanceof Date);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await okAsync('createSslCertificate skips valid existing cert', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nps-ssl-skip-'));
+  try {
+    await createSslCertificate(dir, { expiry: { value: 30, unit: 'day' }, force: true });
+    const second = await createSslCertificate(dir);
+    assert.equal(second.skipped, true);
+    assert.equal(second.renewed, false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await okAsync('createSslCertificate renews when expiry specified', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nps-ssl-renew-'));
+  try {
+    const first = await createSslCertificate(dir, { expiry: { value: 30, unit: 'day' }, force: true });
+    const renewed = await createSslCertificate(dir, { expiry: { value: 90, unit: 'day' } });
+    assert.equal(renewed.renewed, true);
+    assert.equal(renewed.skipped, false);
+    assert.ok(renewed.expiresAt > first.expiresAt);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await okAsync('createSslCertificate renews expired cert', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nps-ssl-expired-'));
+  try {
+    const paths = getCertPaths(dir);
+    fs.mkdirSync(paths.dir, { recursive: true });
+    fs.writeFileSync(paths.cert, '-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----\n', 'utf8');
+    fs.writeFileSync(paths.key, '-----BEGIN PRIVATE KEY-----\ninvalid\n-----END PRIVATE KEY-----\n', 'utf8');
+
+    const result = await createSslCertificate(dir);
+    assert.equal(result.renewed, true);
+    assert.equal(result.skipped, false);
+    assert.ok(result.expiresAt > new Date());
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -512,6 +612,7 @@ ok('formatBasicInfo renders', () => {
   assert.match(text, /Name/);
   assert.match(text, /Folder/);
   assert.match(text, /localhost:3000/);
+  assert.match(text, /SSL/);
 });
 
 ok('formatBasicInfo shows next free port when busy', () => {

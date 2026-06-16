@@ -28,6 +28,8 @@ import {
   msgPortKillFailed,
   msgPortKillNotFound,
 } from '../messages.mjs';
+import { runDoctor } from '../doctor.mjs';
+import { runUpdate } from '../update.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.join(__dirname, '../../package.json'), 'utf8'));
@@ -46,10 +48,22 @@ export async function runCli(argv) {
     .name(APP.bin)
     .description(`${APP.name} — ${APP.tagline}`)
     .version(pkg.version)
+    .option('--update', 'update nps to the latest npm version')
+    .option('--doctor', 'check installation and environment health')
     .option('-e, --exclude <dirs>', 'comma-separated directories to exclude')
     .option('--no-tui', 'force ANSI menu instead of blessed TUI')
     .option('--json', 'output machine-readable JSON')
     .option('-m, --memory <gb>', 'Node.js heap memory in GB (safe limits apply)', parseFloat);
+
+  program.hook('preAction', async () => {
+    const opts = program.opts();
+    if (opts.doctor) {
+      process.exit(await runDoctor());
+    }
+    if (opts.update) {
+      process.exit(await runUpdate());
+    }
+  });
 
   program
     .command('memory [gb]')
@@ -117,7 +131,7 @@ export async function runCli(argv) {
 
   program
     .command('ssl <project> [dir]')
-    .description('Create a local HTTPS certificate in <project>/certs/')
+    .description('Create or renew a local HTTPS certificate in <project>/certs/')
     .option('-e, --expiry <duration>', 'certificate lifetime, e.g. "30 day", "2 week", "1 year"')
     .option('-f, --force', 'replace existing certificate files')
     .action(async (project, dir, opts, cmd) => {

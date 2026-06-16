@@ -8,6 +8,10 @@ export const ALWAYS_EXCLUDE = new Set([
   '$Recycle.Bin', 'System Volume Information', 'Recovery', 'Windows',
   'Program Files', 'Program Files (x86)', 'ProgramData', 'PerfLogs',
   '$WinREAgent', 'MSOCache', 'AppData', 'Users',
+  // macOS metadata / system trees
+  '.Spotlight-V100', '.Trashes', '.fseventsd', '.DocumentRevisions-V100',
+  // Linux system trees
+  'proc', 'sys', 'dev', 'run', 'lost+found', 'snap',
   // Package caches / artifacts
   '.gradle', '.pnpm-store', 'vendor', 'target', 'Pods', '.yarn',
   'bower_components', '.parcel-cache', '.nx', 'storybook-static',

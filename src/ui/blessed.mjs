@@ -1,4 +1,3 @@
-import { spawn } from 'child_process';
 import { buildProjectsAsync } from '../scanner.mjs';
 import { filterProjects } from '../project-filter.mjs';
 import { createGenerationToken } from '../async.mjs';
@@ -8,6 +7,7 @@ import {
   loadProjectDetails,
 } from './lazy-load.mjs';
 import { executeAction } from './launch-flow.mjs';
+import { openFolder, openTerminal } from '../platform.mjs';
 import { getPortStatus, killPort, restoreStdinForPrompt, validatePort } from '../port.mjs';
 import { getSystemInfo, warmSystemInfoCache } from '../system.mjs';
 import { getMemoryGb, getMemoryInfo, setMemoryGb, clampMemoryGb, resetMemoryGb } from '../memory.mjs';
@@ -386,8 +386,11 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
 
     const message = result.skipped
       ? `SSL cert exists — expires ${result.expiresAt?.toLocaleDateString() || 'unknown'}`
-      : `SSL cert created (${formatExpiry(expiry)})`;
+      : result.renewed
+        ? `SSL cert renewed (${formatExpiry(expiry)})`
+        : `SSL cert created (${formatExpiry(expiry)})`;
     showToast(screen, ui.navFooter, message, result.skipped ? 'yellow' : 'green', 3500);
+    await refreshPortStatus(proj);
   }
 
   async function pickAndRun() {
@@ -407,19 +410,15 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
     const proj = selectedProject();
     if (!proj) return;
 
-    spawn('explorer', [proj.dir], { shell: true, detached: true, stdio: 'ignore' }).unref();
+    openFolder(proj.dir);
     showToast(screen, ui.navFooter, `Opened ${proj.relDir}`, 'cyan');
   }
 
-  function openTerminal() {
+  function openTerminalInProject() {
     const proj = selectedProject();
     if (!proj) return;
 
-    spawn('cmd', ['/c', 'start', 'cmd', '/k', `cd /d "${proj.dir}"`], {
-      shell: true,
-      detached: true,
-      stdio: 'ignore',
-    }).unref();
+    openTerminal(proj.dir);
     showToast(screen, ui.navFooter, 'Terminal opened', 'cyan');
   }
 
@@ -477,7 +476,7 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
   screen.key(['d', 'D'], () => runScript('dev'));
   screen.key(['s', 'S'], () => pickAndRun());
   screen.key(['b', 'B'], () => runScript('build'));
-  screen.key(['t', 'T'], () => openTerminal());
+  screen.key(['t', 'T'], () => openTerminalInProject());
   screen.key(['e', 'E'], () => openExplorer());
 
   screen.key(['k', 'K'], async () => {

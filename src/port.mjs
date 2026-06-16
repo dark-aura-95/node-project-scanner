@@ -174,6 +174,23 @@ export async function findPidsOnPort(port) {
   return findPidsOnPortUnix(valid);
 }
 
+async function killPidUnix(pid, force) {
+  const signal = force ? '-9' : '-15';
+  const sig = force ? 'SIGKILL' : 'SIGTERM';
+
+  try {
+    await execFileAsync('pkill', [force ? '-9' : '-15', '-P', String(pid)]);
+  } catch {
+    // no child processes or pkill unavailable
+  }
+
+  try {
+    process.kill(pid, sig);
+  } catch {
+    await execFileAsync('kill', [signal, String(pid)]);
+  }
+}
+
 export async function killPort(port, { force = true } = {}) {
   const valid = validatePort(port);
   if (valid == null) throw new Error(`Invalid port: ${port}`);
@@ -191,11 +208,7 @@ export async function killPort(port, { force = true } = {}) {
       if (process.platform === 'win32') {
         await execFileAsync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
       } else {
-        try {
-          process.kill(pid, force ? 'SIGKILL' : 'SIGTERM');
-        } catch {
-          await execFileAsync('kill', [force ? '-9' : '-15', String(pid)]);
-        }
+        await killPidUnix(pid, force);
       }
       killed.push(pid);
     } catch {

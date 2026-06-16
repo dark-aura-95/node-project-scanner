@@ -2,6 +2,17 @@
 
 All notable changes to **node-project-scanner** (`nps`) are documented here.
 
+## [2.0.0] - 2026-06-16
+
+### Added
+
+- **`nps --doctor`** — environment health check (Node, npm, config, memory, SSL defaults, version vs registry)
+- **`nps --update`** — self-update to the latest npm release
+
+### Changed
+
+- **npx usage** — README examples use `npx node-project-scanner` instead of a local path
+
 ## [1.1.5] - 2026-06-16
 
 ### Added
