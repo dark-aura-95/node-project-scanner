@@ -4,24 +4,6 @@ Professional CLI to **scan**, **run**, and **build** Node.js / JavaScript projec
 
 Short command: **`nps`**
 
-## Project layout
-
-```
-src/
-├── constants.mjs        # App name, version, tagline, shortcuts
-├── messages.mjs         # Shared user-facing messages
-├── project.mjs          # Script helpers, action groups (Run / Package / …)
-├── reinit.mjs           # Clean artifacts + reinstall
-├── port.mjs             # Port detect, validate, kill, status
-├── ui/
-│   ├── blessed.mjs      # TUI controller
-│   ├── blessed-layout.mjs
-│   ├── blessed-modals.mjs   # Port confirm, prompts, action menu
-│   ├── dashboard-format.mjs # Detail panel formatting
-│   ├── format.mjs           # ANSI & blessed formatting
-│   └── router.mjs           # TTY vs non-TTY entry
-```
-
 ## Features
 
 - **Dashboard TUI** — projects list, summary, and detail panels (basic info, package status, scripts, system)
@@ -233,7 +215,7 @@ npm install -g node-project-scanner
 nps --version
 ```
 
-**1.1.4 highlights:** Grouped action menu (Run → Package → Tooling → Scripts), reinit (`U` / `nps reinit`). Full notes in [CHANGELOG.md](./CHANGELOG.md).
+**1.1.5 highlights:** SSL certificate creation (`H` / `nps ssl`), configurable default expiry (`G` / `nps ssl-expiry`). Full notes in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Requirements
 

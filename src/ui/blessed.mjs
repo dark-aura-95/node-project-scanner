@@ -11,6 +11,14 @@ import { executeAction } from './launch-flow.mjs';
 import { getPortStatus, killPort, restoreStdinForPrompt, validatePort } from '../port.mjs';
 import { getSystemInfo, warmSystemInfoCache } from '../system.mjs';
 import { getMemoryGb, getMemoryInfo, setMemoryGb, clampMemoryGb, resetMemoryGb } from '../memory.mjs';
+import {
+  createSslCertificate,
+  formatExpiry,
+  getSslExpiryInfo,
+  parseExpiry,
+  resetSslExpiry,
+  setSslExpiry,
+} from '../ssl.mjs';
 import { ACTION, canRunAction, actionLabel, needsPort } from '../project.mjs';
 import { MSG } from '../messages.mjs';
 import {
@@ -316,6 +324,11 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
       return showToast(screen, ui.navFooter, MSG.noScriptFor(actionLabel(script), proj.name), 'yellow');
     }
 
+    if (script === ACTION.SSL) {
+      await createSslForProject();
+      return;
+    }
+
     let launchPort = null;
     if (needsPort(script)) {
       launchPort = await confirmPortForLaunch(proj);
@@ -332,6 +345,49 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
       },
     });
     process.exit(code);
+  }
+
+  async function createSslForProject() {
+    const proj = selectedProject();
+    if (!proj) return showToast(screen, ui.navFooter, MSG.selectFirst, 'yellow');
+
+    const info = getSslExpiryInfo();
+    const value = await showPrompt(
+      screen,
+      {
+        label: ' 🔐 SSL Certificate Expiry ',
+        width: '68%',
+        style: { border: { fg: 'cyan' } },
+      },
+      `Min ${info.minDays} days · units: day, week, month, year\n` +
+      `Default: ${formatExpiry(info.current)}  |  blank = default  |  e.g. 30 day, 2 week, 1 year`,
+      formatExpiry(info.current)
+    );
+    if (value == null) return;
+
+    const trimmed = String(value).trim();
+    let expiry = info.current;
+    if (trimmed) {
+      const parsed = parseExpiry(trimmed);
+      if (!parsed) {
+        showToast(screen, ui.navFooter, 'Invalid expiry — e.g. 30 day, 1 year', 'red', 3500);
+        return;
+      }
+      expiry = parsed;
+    }
+
+    showToast(screen, ui.navFooter, `Creating SSL certificate (${formatExpiry(expiry)})…`, 'cyan', 1500);
+    const result = await createSslCertificate(proj.dir, { expiry });
+
+    if (!result.ok) {
+      showToast(screen, ui.navFooter, result.error, 'red', 4500);
+      return;
+    }
+
+    const message = result.skipped
+      ? `SSL cert exists — expires ${result.expiresAt?.toLocaleDateString() || 'unknown'}`
+      : `SSL cert created (${formatExpiry(expiry)})`;
+    showToast(screen, ui.navFooter, message, result.skipped ? 'yellow' : 'green', 3500);
   }
 
   async function pickAndRun() {
@@ -451,6 +507,45 @@ export async function runBlessedInteractive(rootDir, excludeSet) {
   });
 
   screen.key(['o', 'O'], () => runScript('start'));
+
+  screen.key(['h', 'H'], () => createSslForProject());
+
+  screen.key(['g', 'G'], async () => {
+    const info = getSslExpiryInfo();
+    const value = await showPrompt(
+      screen,
+      {
+        label: ' ⚙ Default SSL Expiry ',
+        width: '68%',
+        style: { border: { fg: 'yellow' } },
+      },
+      `Min ${info.minDays} days · units: day, week, month, year\n` +
+      `Built-in default: ${formatExpiry(info.defaultExpiry)}  |  blank = built-in  |  "d" = reset`,
+      formatExpiry(info.current)
+    );
+    if (value == null) return;
+
+    const trimmed = String(value).trim().toLowerCase();
+    if (!trimmed) {
+      const reset = resetSslExpiry();
+      showToast(screen, ui.navFooter, `SSL default: ${formatExpiry(reset)}`, 'green');
+      return;
+    }
+    if (trimmed === 'd' || trimmed === 'default') {
+      const reset = resetSslExpiry();
+      showToast(screen, ui.navFooter, `SSL default reset: ${formatExpiry(reset)}`, 'green');
+      return;
+    }
+
+    const parsed = parseExpiry(trimmed);
+    if (!parsed) {
+      showToast(screen, ui.navFooter, 'Invalid expiry — e.g. 30 day, 1 year', 'red', 3500);
+      return;
+    }
+
+    const saved = setSslExpiry(parsed);
+    showToast(screen, ui.navFooter, `SSL default: ${formatExpiry(saved)} (${saved.days} days)`, 'green');
+  });
 
   screen.key(['m', 'M'], async () => {
     const info = getMemoryInfo();

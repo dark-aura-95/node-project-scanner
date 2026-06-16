@@ -2,6 +2,14 @@
 
 All notable changes to **node-project-scanner** (`nps`) are documented here.
 
+## [1.1.5] - 2026-06-16
+
+### Added
+
+- **SSL certificates** — `nps ssl <project>` creates local HTTPS certs in `<project>/certs/` (`localhost.pem`, `localhost-key.pem`); uses bundled Node crypto (no system OpenSSL required)
+- **Configurable expiry** — `nps ssl-expiry` sets the default lifetime (units: day, week, month, year; minimum 7 days)
+- **TUI shortcuts** — `H` create SSL cert, `G` set default SSL expiry; **ssl cert** action in the Tooling menu
+
 ## [1.1.4] - 2026-06-13
 
 ### Added

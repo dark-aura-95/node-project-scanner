@@ -161,6 +161,7 @@ export function formatQuickActionsFooter() {
     '{magenta-fg}[U]{/} Reinit  ' +
     '{green-fg}[D]{/} Dev  ' +
     '{yellow-fg}[B]{/} Build  ' +
+    '{cyan-fg}[H]{/} SSL  ' +
     '{red-fg}[K]{/} Kill Port  ' +
     '{yellow-fg}[M]{/} Memory  ' +
     '{magenta-fg}[S]{/} Scripts  ' +

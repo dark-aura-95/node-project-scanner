@@ -1,6 +1,6 @@
 {
   "name": "node-project-scanner",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "Professional CLI to scan, run, and build Node/JS projects with port control",
   "type": "module",
   "bin": {
@@ -23,7 +23,8 @@
   },
   "dependencies": {
     "commander": "^12.1.0",
-    "neo-blessed": "^0.2.0"
+    "neo-blessed": "^0.2.0",
+    "selfsigned": "^5.5.0"
   },
   "keywords": [
     "cli",

@@ -6,6 +6,7 @@ export const ACTION = {
   INSTALL: '__install__',
   CI: '__ci__',
   REINIT: '__reinit__',
+  SSL: '__ssl__',
 };
 
 export const PORT_SCRIPTS = new Set(['dev', 'start']);
@@ -42,6 +43,7 @@ export const ACTION_GROUP_LABELS = {
 export function hasScript(proj, script) {
   if (script === ACTION.INSTALL) return true;
   if (script === ACTION.REINIT) return true;
+  if (script === ACTION.SSL) return true;
   if (script === ACTION.CI) return proj.hasLock || proj.hasCiScript;
   const key = `has${script.charAt(0).toUpperCase()}${script.slice(1)}`;
   return Boolean(proj[key]) || script in (proj.scripts || {});
@@ -64,13 +66,14 @@ export function needsPort(script) {
 }
 
 export function isDirectAction(script) {
-  return script === ACTION.INSTALL || script === ACTION.CI || script === ACTION.REINIT;
+  return script === ACTION.INSTALL || script === ACTION.CI || script === ACTION.REINIT || script === ACTION.SSL;
 }
 
 export function actionLabel(script) {
   if (script === ACTION.INSTALL) return 'install';
   if (script === ACTION.REINIT) return 'reinit';
   if (script === ACTION.CI) return 'ci';
+  if (script === ACTION.SSL) return 'ssl cert';
   return script;
 }
 
@@ -78,6 +81,7 @@ export function actionIcon(script) {
   if (script === ACTION.INSTALL) return '📦';
   if (script === ACTION.REINIT) return '🔄';
   if (script === ACTION.CI) return '🔒';
+  if (script === ACTION.SSL) return '🔐';
   if (script === 'build') return '■';
   if (script === 'test' || script === 'lint') return '◆';
   return '▶';
@@ -86,6 +90,7 @@ export function actionIcon(script) {
 export function actionCmd(proj, script) {
   if (script === ACTION.INSTALL) return getInstallLabel(proj.pkgMgr);
   if (script === ACTION.REINIT) return getReinitLabel(proj.pkgMgr);
+  if (script === ACTION.SSL) return 'nps ssl';
   if (script === ACTION.CI) {
     return proj.hasLock ? getCiLabel(proj.pkgMgr) : proj.ciCmd;
   }
@@ -117,6 +122,8 @@ export function buildActions(proj) {
   if (proj.hasLock) add(ACTION.CI, 'deps');
 
   for (const s of EXTRA_PRIORITY) add(s, 'tooling');
+
+  add(ACTION.SSL, 'tooling');
 
   for (const name of Object.keys(proj.scripts || {})) {
     if (!seen.has(name)) add(name, 'other');

@@ -77,6 +77,18 @@ const {
   applyProjectMetaFast,
 } = await import('../src/ui/lazy-load.mjs');
 const { createGenerationToken } = await import('../src/async.mjs');
+const {
+  parseExpiry,
+  clampExpiry,
+  formatExpiry,
+  unitToDays,
+  MIN_EXPIRY_DAYS,
+  getSslExpiryInfo,
+  setSslExpiry,
+  resetSslExpiry,
+  createSslCertificate,
+  getCertPaths,
+} = await import('../src/ssl.mjs');
 
 const exclude = buildExcludeSet();
 const projects = buildProjects(root, exclude);
@@ -217,6 +229,31 @@ ok('createGenerationToken', () => {
   assert.equal(t.isCurrent(a), false);
 });
 
+ok('parseExpiry supports day/week/month/year units', () => {
+  assert.equal(parseExpiry('30 day').days, 30);
+  assert.equal(parseExpiry('2 week').days, 14);
+  assert.equal(parseExpiry('3 month').days, 90);
+  assert.equal(parseExpiry('1 year').days, 365);
+  assert.equal(parseExpiry('90').days, 90);
+});
+
+ok('clampExpiry enforces 7 day minimum', () => {
+  const clamped = clampExpiry({ value: 3, unit: 'day' });
+  assert.equal(clamped.days, MIN_EXPIRY_DAYS);
+  assert.equal(clamped.value, MIN_EXPIRY_DAYS);
+  assert.equal(clamped.unit, 'day');
+});
+
+ok('formatExpiry renders singular and plural units', () => {
+  assert.equal(formatExpiry({ value: 1, unit: 'year' }), '1 year');
+  assert.equal(formatExpiry({ value: 2, unit: 'week' }), '2 weeks');
+});
+
+ok('unitToDays converts units', () => {
+  assert.equal(unitToDays(2, 'week'), 14);
+  assert.equal(unitToDays(1, 'month'), 30);
+});
+
 ok('buildActions includes start script', () => {
   const p = projects[0];
   const actions = buildActions(p);
@@ -234,6 +271,15 @@ ok('hasScript reinit always true', () => {
 ok('buildActions includes reinit', () => {
   const actions = buildActions(projects[0]);
   assert.ok(actions.some((a) => a.script === ACTION.REINIT));
+});
+
+ok('buildActions includes ssl cert', () => {
+  const actions = buildActions(projects[0]);
+  assert.ok(actions.some((a) => a.script === ACTION.SSL));
+});
+
+ok('hasScript ssl always true', () => {
+  assert.equal(hasScript(projects[0], ACTION.SSL), true);
 });
 
 ok('buildActions run scripts before package actions', () => {
@@ -254,7 +300,7 @@ console.log('\nCLI tests (non-interactive)');
 await okAsync('--version', async () => {
   const { code, stdout } = await runCli(['--version']);
   assert.equal(code, 0);
-  assert.match(stdout, /1\.1\.4/);
+  assert.match(stdout, /1\.1\.5/);
 });
 
 await okAsync('scan --list-only', async () => {
@@ -295,6 +341,52 @@ await okAsync('memory show', async () => {
   const { code, stdout } = await runCli(['memory']);
   assert.equal(code, 0);
   assert.match(stdout, /Device RAM/);
+});
+
+await okAsync('ssl-expiry show', async () => {
+  const { code, stdout } = await runCli(['ssl-expiry']);
+  assert.equal(code, 0);
+  assert.match(stdout, /Current default/);
+  assert.match(stdout, /day, week, month, year/);
+});
+
+await okAsync('ssl-expiry invalid exits 1', async () => {
+  const { code, stderr } = await runCli(['ssl-expiry', 'bad-value']);
+  assert.equal(code, 1);
+  assert.match(stderr, /Invalid expiry/i);
+});
+
+await okAsync('ssl-expiry set and reset', async () => {
+  const before = getSslExpiryInfo();
+  try {
+    const set = setSslExpiry({ value: 30, unit: 'day' });
+    assert.equal(set.days, 30);
+    const { code, stdout } = await runCli(['ssl-expiry']);
+    assert.equal(code, 0);
+    assert.match(stdout, /30 days/);
+
+    const { code: resetCode, stdout: resetOut } = await runCli(['ssl-expiry', '--reset']);
+    assert.equal(resetCode, 0);
+    assert.match(resetOut, /reset to default/i);
+  } finally {
+    if (before.isCustom) setSslExpiry(before.current);
+    else resetSslExpiry();
+  }
+});
+
+await okAsync('createSslCertificate writes cert files', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nps-ssl-'));
+  try {
+    const result = await createSslCertificate(dir, { expiry: { value: 7, unit: 'day' }, force: true });
+    assert.equal(result.ok, true);
+    assert.equal(result.created, true);
+    const paths = getCertPaths(dir);
+    assert.equal(fs.existsSync(paths.cert), true);
+    assert.equal(fs.existsSync(paths.key), true);
+    assert.ok(result.expiresAt instanceof Date);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 await okAsync('kill-port already free', async () => {

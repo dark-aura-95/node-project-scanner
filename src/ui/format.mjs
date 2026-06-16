@@ -161,6 +161,8 @@ export function formatBlessedHelp() {
     '  D          Run dev server',
     '  S          Run start script',
     '  B          Run build',
+    '  H          Create SSL certificate',
+    '  G          Set default SSL expiry',
     '  T          Run test',
     '  L          Run lint',
     '  O          More actions menu',

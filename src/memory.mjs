@@ -1,11 +1,7 @@
-import fs from 'fs';
-import path from 'path';
 import os from 'os';
 import readline from 'readline';
 import { fg, R, DIM, B, cursor } from './theme.mjs';
-
-const CONFIG_DIR = path.join(os.homedir(), '.nps');
-const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+import { CONFIG_FILE, loadConfig, saveConfig } from './config.mjs';
 const MIN_GB = 1;
 const RESERVED_GB = 2;
 
@@ -23,19 +19,6 @@ export function getDefaultMemoryGb() {
   const { deviceGb, maxGb } = getSafeLimits();
   const suggested = Math.min(12, Math.round(deviceGb * 0.75 * 10) / 10);
   return Math.min(maxGb, Math.max(MIN_GB, suggested));
-}
-
-function loadConfig() {
-  try {
-    return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-  } catch {
-    return {};
-  }
-}
-
-function saveConfig(config) {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
 }
 
 export function clampMemoryGb(gb) {

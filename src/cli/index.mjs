@@ -12,6 +12,15 @@ import { printProjectTable, formatAnsiDetails } from '../ui/format.mjs';
 import { MSG, msgEmpty, msgNonInteractiveTip } from '../messages.mjs';
 import { R, fg, DIM } from '../theme.mjs';
 import { getMemoryInfo, getMemoryGb, setMemoryGb, resetMemoryGb, clampMemoryGb } from '../memory.mjs';
+import {
+  createSslCertificate,
+  formatExpiry,
+  formatSslResult,
+  getSslExpiryInfo,
+  parseExpiry,
+  resetSslExpiry,
+  setSslExpiry,
+} from '../ssl.mjs';
 import { killPort, validatePort } from '../port.mjs';
 import {
   msgPortAlreadyFree,
@@ -69,6 +78,77 @@ export async function runCli(argv) {
   ${DIM}Mode:${R}            ${info.isCustom ? 'custom' : 'auto (device default)'}
   ${DIM}Config:${R}          ${info.configPath}
 `);
+    });
+
+  program
+    .command('ssl-expiry [duration]')
+    .description('Show or set default SSL certificate expiry (min 7 days; units: day, week, month, year)')
+    .option('--reset', 'reset to built-in default (1 year)')
+    .action((duration, opts) => {
+      const info = getSslExpiryInfo();
+
+      if (opts.reset) {
+        const val = resetSslExpiry();
+        console.log(`\n  ${fg.green}SSL expiry reset to default: ${formatExpiry(val)} (${val.days} days)${R}\n`);
+        return;
+      }
+
+      if (duration != null) {
+        const parsed = parseExpiry(duration);
+        if (!parsed) {
+          console.error(`\n  ${fg.red}Invalid expiry: ${duration}${R}`);
+          console.error(`  ${DIM}Use units: day, week, month, year (min ${info.minDays} days)${R}\n`);
+          process.exit(1);
+        }
+        const val = setSslExpiry(parsed);
+        console.log(`\n  ${fg.green}Default SSL expiry set to ${formatExpiry(val)} (${val.days} days)${R}\n`);
+        return;
+      }
+
+      console.log(`
+  ${DIM}Built-in default:{R}  ${formatExpiry(info.defaultExpiry)}
+  ${DIM}Current default:{R}  ${fg.cyan}${formatExpiry(info.current)}${R} (${info.current.days} days)
+  ${DIM}Minimum:{R}          ${info.minDays} days
+  ${DIM}Units:{R}            ${info.units.join(', ')}
+  ${DIM}Mode:{R}             ${info.isCustom ? 'custom' : 'built-in default'}
+  ${DIM}Config:{R}           ${info.configPath}
+`);
+    });
+
+  program
+    .command('ssl <project> [dir]')
+    .description('Create a local HTTPS certificate in <project>/certs/')
+    .option('-e, --expiry <duration>', 'certificate lifetime, e.g. "30 day", "2 week", "1 year"')
+    .option('-f, --force', 'replace existing certificate files')
+    .action(async (project, dir, opts, cmd) => {
+      const global = cmd.parent.opts();
+      const { projects } = getProjects(dir, parseExcludeList(global.exclude));
+      const proj = findProject(projects, project);
+
+      if (!proj) {
+        console.error(`\n  ${MSG.projectNotFound(project)}${R}\n`);
+        process.exit(1);
+      }
+
+      let expiry = null;
+      if (opts.expiry != null) {
+        expiry = parseExpiry(opts.expiry);
+        if (!expiry) {
+          const info = getSslExpiryInfo();
+          console.error(`\n  ${fg.red}Invalid expiry: ${opts.expiry}${R}`);
+          console.error(`  ${DIM}Use units: day, week, month, year (min ${info.minDays} days)${R}\n`);
+          process.exit(1);
+        }
+      }
+
+      const result = await createSslCertificate(proj.dir, { expiry, force: opts.force });
+      if (!result.ok) {
+        console.error(`\n  ${fg.red}${result.error}${R}\n`);
+        process.exit(1);
+      }
+
+      console.log(`\n  ${fg.green}${formatSslResult(result)}${R}\n`);
+      process.exit(0);
     });
 
   program
